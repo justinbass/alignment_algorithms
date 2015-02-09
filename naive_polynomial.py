@@ -210,6 +210,7 @@ def naive_polynomial_align(read_arr):
     for (first,second) in align_order:
         #Check through each mergelet to find where to insert (read_no, shift)
         #If the first number doesn't exist, we need to insert a new mergelet
+        skip_reads = False
         need_new_mergelet = True
         mergelet_to_insert_into = 0
 
@@ -221,12 +222,13 @@ def naive_polynomial_align(read_arr):
 
             #If first is in array, try to add the second in
             if first in first_arr:
+                skip_reads = True
+
                 #If second exists, skip this mergelet
                 if second in first_arr:
-                    continue
+                    break
 
                 #Else, add second in
-                need_new_mergelet = False
                 mergelet_to_insert_into = mergelet
 
                 #Find location of existing read
@@ -236,27 +238,45 @@ def naive_polynomial_align(read_arr):
                 second_shift = align_shift_arrs[first][second]
                 second_shift += mergelet[first_pos][1]
 
+                insert_into_mergelet(mergelet_to_insert_into, second, second_shift)
+
                 break
 
-        #Now insert in order of ascending shift
-        if not need_new_mergelet:
-            insert_into_mergelet(mergelet_to_insert_into, second, second_shift)
+            #If second is in array, try to add the first in
+            if second in first_arr:
+                skip_reads = True
+
+                mergelet_to_insert_into = mergelet
+
+                #Find location of existing read
+                first_pos = first_arr.index(second)
+
+                #Get shift from first to second, then add shift of existing read
+                second_shift = align_shift_arrs[second][first]
+                second_shift += mergelet[first_pos][1]
+
+                insert_into_mergelet(mergelet_to_insert_into, first, second_shift)
+
+                break
+
+        if skip_reads:
+            continue
 
         #A new mergelet must be created
+        #If the first is out of the array, this means it was previously
+        #   tagged as completely separate from the other reads.
+        if first == len(read_arr):
+            mergelet_arr.append([(second,0)])
         else:
-            #If the first is out of the array, this means it was previously
-            #   tagged as completely separate from the other reads.
-            if first == len(read_arr):
-                mergelet_arr.append([(second,0)])
-            else:
-                mergelet_arr.append([(first,0)])
-                second_shift = align_shift_arrs[first][second]
+            mergelet_arr.append([(first,0)])
+            second_shift = align_shift_arrs[first][second]
 
-                #Insert before or after first entry
-                if second_shift < 0:
-                    mergelet_arr[-1].insert(0,(second,second_shift))
-                else:
-                    mergelet_arr[-1].append((second,second_shift))
+            #Insert before or after first entry
+            if second_shift < 0:
+                mergelet_arr[-1].insert(0,(second,second_shift))
+            else:
+                mergelet_arr[-1].append((second,second_shift))
+
         if VERBOSE:
             print mergelet_arr
     if VERBOSE:
@@ -269,7 +289,8 @@ def naive_polynomial_align(read_arr):
             for j in range(i+1,len(mergelet_arr)):
                 for read2 in mergelet_arr[j]:
                     if read1[0] == read2[0]:
-                        merge_mergelets.append([i,j,read1[1]-read2[1]])
+                        if not [i,j,read1[1]-read2[1]] in merge_mergelets:
+                            merge_mergelets.append([i,j,read1[1]-read2[1]])
 
     #To help maintain topological order
     merge_mergelets = merge_mergelets[::-1]
@@ -279,7 +300,6 @@ def naive_polynomial_align(read_arr):
         print str(merge_mergelets)
 
     for (ml1,ml2,all_shift) in merge_mergelets:
-        print ml2
         for (read,shift) in mergelet_arr[ml2]:
             if not (read, shift+all_shift) in mergelet_arr[ml1]:
                 insert_into_mergelet(mergelet_arr[ml1], read, shift+all_shift)
@@ -365,9 +385,8 @@ def naive_polynomial_align(read_arr):
 
 def main():
     rseq = ALPHABET
-    seq_reads = split_seq(rseq,6,5,10,1.0)
-    seq_reads = ['DEFGHIJKLM', 'LMNOPQRSTU', 'DEFGHIJ', 'BCDEF', 'LMNOP', 'GHIJK']
-
+    seq_reads = split_seq(rseq,10,5,10,1.0)
+    #seq_reads = ['MNOPQRSTUV', 'IJKLMNOPQR', 'HIJKLMNOP', 'LMNOPQRS', 'LMNOPQRS', 'KLMNOPQ']
     naive_polynomial_align(seq_reads)
 
 main()
