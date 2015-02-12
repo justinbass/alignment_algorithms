@@ -288,20 +288,43 @@ def naive_polynomial_align(read_arr):
         print 'Merging mergelets:'
 
     #Merge mergelets if possible
-    for i in range(0,len(mergelet_arr)):
-        for (read1,shift1) in mergelet_arr[i]:
+    RESTART = False
 
+    i = 0
+    while(True):
+        for (read1,shift1) in mergelet_arr[i]:
             for j in range(i+1,len(mergelet_arr)):
                 for (read2,shift2) in mergelet_arr[j]:
                     if read1 == read2:
                         while len(mergelet_arr[j]) > 0:
                             insert_read = mergelet_arr[j].pop(0)
-                            insert_into_mergelet(mergelet_arr[i], insert_read[0], insert_read[1]+shift1-shift2)
+                            if (insert_read[0], insert_read[1]+shift1-shift2) not in mergelet_arr[i]:
+                                insert_into_mergelet(mergelet_arr[i], insert_read[0], insert_read[1]+shift1-shift2)
 
                         if VERBOSE:
                             print mergelet_arr
 
+                        RESTART = True
+
                         break
+
+                if RESTART == True:
+                    break
+
+            if RESTART == True:
+                break
+
+        #If a match was made, the loop must be completely restart in case values
+        #   have been inserted before the iterators in the loops; in this case,
+        #   they would never be reached.
+        if RESTART == True:
+            RESTART = False
+            i = 0
+            continue
+
+        i += 1
+        if i >= len(mergelet_arr):
+            break
 
     while [] in mergelet_arr:
         mergelet_arr.remove([])
@@ -383,36 +406,46 @@ def longest_substring(string1, string2):
     return answer
 
 def test_naive_single(rseq,seq_reads):
+    PRINT_PASS_AND_DATA = False
+
     aligned_array = naive_polynomial_align(seq_reads)
 
     #Substring test
-    #print 'data:',seq_reads,'\n'
-    if aligned_array[0][0] in rseq:
-        pass#print 'PASSED:', aligned_array[0][0], 'is in', rseq
-    else:
-        print '*FAILED:', aligned_array[0][0], 'is not in', rseq
+    if PRINT_PASS_AND_DATA:
+        print 'data:',seq_reads,'\n'
+    for i in range(0,len(aligned_array)):
+        if aligned_array[i][0] in rseq:
+            if PRINT_PASS_AND_DATA:
+                print 'PASSED:', aligned_array[i][0], 'is in', rseq
+        else:
+            print '*FAILED:', aligned_array[i][0], 'is not in', rseq
 
     #Common substring test: No two returned strings should have a common
     #   substring (they should have been joined in the algorithm if possible)
+    test2_failed = False
     for i in range(0,len(aligned_array)):
         for j in range(i+1,len(aligned_array)):
             substr = longest_substring(aligned_array[i][0],aligned_array[j][0])
             if len(substr) > 0:
+                test2_failed = True
                 print '*FAILED:', aligned_array[i][0], 'intersects', aligned_array[j][0]
+
+            substr = longest_substring(aligned_array[j][0],aligned_array[i][0])
+            if len(substr) > 0:
+                test2_failed = True
+                print '*FAILED:', aligned_array[i][0], 'intersects', aligned_array[j][0]
+
+    if len(aligned_array) > 1 and not test2_failed:
+        if PRINT_PASS_AND_DATA:
+            print 'PASSED: No common substrings'
 
 def test_naive_multiple(rounds):
     rseq = ALPHABET
 
     for i in range(0,rounds):
-        seq_reads = split_seq(rseq,10,5,10,1.0)
+        seq_reads = split_seq(rseq,10,5,6,1.0)
         test_naive_single(rseq,seq_reads)
 
 test_naive_multiple(1000)
-
-#VERBOSE = True
-#test_naive_single(ALPHABET, ['GHIJKLM', 'QRSTUVWXY', 'NOPQRSTUVW', 'HIJKLMN', 'MNOPQRST', 'GHIJKLMNO', 'CDEFGHIJKL', 'MNOPQRST', 'OPQRSTU', 'DEFGHIJK'])
-
-
-
 
 
