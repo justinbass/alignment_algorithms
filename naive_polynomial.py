@@ -2,7 +2,7 @@ import random
 
 random.seed()
 
-VERBOSE = True #For printing intermediate steps
+VERBOSE = False #For printing intermediate steps and debugging
 letters = ['A','T','G','C']
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -315,7 +315,12 @@ def naive_polynomial_align(read_arr):
             print 'To merge: ' + str(merge_mergelets)
 
         #Get first mergelet in list
-        (ml1,ml2,all_shift) = merge_mergelets.pop(0)
+        [ml1,ml2,all_shift] = merge_mergelets.pop(0)
+
+        #Delete redundant merge requests, or else they will be
+        #   consistency-shifted later, which is wrong
+        while [ml1,ml2,all_shift] in merge_mergelets:
+            merge_mergelets.remove([ml1,ml2,all_shift])
 
         #Log this, in case other merges use ml1 or ml2
         merge_mergelet_pairs.append((ml1,ml2))
@@ -333,30 +338,30 @@ def naive_polynomial_align(read_arr):
             print 'Merged ' + str([ml1,ml2,all_shift]) + ': ' + str(mergelet_arr)
 
         #Collapse merges:
-        #After the current merge, all merge requests will be subsequently
-        #   shifted down by 1, and the shifts changed to reflect the prior merge
+        #After the current merge, all merge requests and shifts will be changed
+        # to reflect the merge (e.g. if 3 is merged into 1, change all 3's->1's)
         for i in range(0,len(merge_mergelets)):
             if merge_mergelets[i][0] >= ml2:
-                pair_change = (merge_mergelets[i][0], merge_mergelets[i][0]-1)
+                pair_change = (merge_mergelets[i][0], merge_mergelets[i][0]-(ml2-ml1))
                 if pair_change in merge_mergelet_pairs:
                     consistency_shift = merge_mergelet_shifts[merge_mergelet_pairs.index(pair_change)]
                     merge_mergelets[i][2] += consistency_shift
 
-                merge_mergelets[i][0] -= 1
+                merge_mergelets[i][0] -= (ml2-ml1)
 
             if merge_mergelets[i][1] >= ml2:
-                pair_change = (merge_mergelets[i][1], merge_mergelets[i][1]-1)
+                pair_change = (merge_mergelets[i][1], merge_mergelets[i][1]-(ml2-ml1))
                 if pair_change in merge_mergelet_pairs:
                     consistency_shift = merge_mergelet_shifts[merge_mergelet_pairs.index(pair_change)]
                     merge_mergelets[i][2] += consistency_shift
 
-                merge_mergelets[i][1] -= 1
+                merge_mergelets[i][1] -= (ml2-ml1)
 
             #Mark a redundant merge request for deletion
             if merge_mergelets[i][0] == merge_mergelets[i][1]:
                 merge_mergelets[i] = [0,0,0]
 
-        #Delete finished merge requests
+        #Delete redundant merge requests
         while [0,0,0] in merge_mergelets:
             merge_mergelets.remove([0,0,0])
 
@@ -382,7 +387,6 @@ def naive_polynomial_align(read_arr):
                 min_shift = read[1]
 
         #Replace read_no with actual read, and normalize shifts to begin at 0
-        aligned_array.append(list())
         for j in range(0,len(mergelet)):
             read_shift_arr.append( (read_arr[ mergelet[j][0] ],
                               mergelet[j][1]-min_shift ) )
@@ -426,9 +430,33 @@ def naive_polynomial_align(read_arr):
 
     return aligned_array
 
-def main():
+def test_naive_alphabet(rounds):
     rseq = ALPHABET
-    seq_reads = split_seq(rseq,10,5,10,1.0)
-    naive_polynomial_align(seq_reads)
 
-main()
+    for i in range(0,rounds):
+        seq_reads = split_seq(rseq,10,5,10,1.0)
+        aligned_array = naive_polynomial_align(seq_reads)
+
+        print 'data:',seq_reads
+        if aligned_array[0][0] in rseq:
+            print 'PASSED:', aligned_array[0][0], 'is in', rseq
+        else:
+            print ' FAILED:', aligned_array[0][0], 'is not in', rseq
+
+def test_naive_single(rseq,seq_reads):
+    aligned_array = naive_polynomial_align(seq_reads)
+
+    print 'data:',seq_reads,'\n'
+    if aligned_array[0][0] in rseq:
+        print 'PASSED:', aligned_array[0][0], 'is in', rseq
+    else:
+        print ' FAILED:', aligned_array[0][0], 'is not in', rseq
+
+test_naive_alphabet(100)
+
+#test_naive_single(ALPHABET, ['JKLMNOPQ', 'LMNOPQRS', 'DEFGHIJ', 'MNOPQRS', 'DEFGHIJKL', 'KLMNOPQ', 'BCDEFGHIJK', 'QRSTUVWXY', 'KLMNO', 'STUVWX'])
+
+
+
+
+
