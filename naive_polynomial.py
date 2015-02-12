@@ -131,7 +131,7 @@ def naive_polynomial_align(read_arr):
     #Get alignments in the order they should be processed based on max score
     align_order = list()
 
-    for rounds in range(0,len(2*align_score_arrs)-1):
+    for rounds in range(0,len(align_score_arrs)*len(align_score_arrs)-1):
         i_max = -1
         j_max = -1
         score_max = -1
@@ -190,8 +190,10 @@ def naive_polynomial_align(read_arr):
     #Mergelet structure: [(read1_no, shift1), (read2_no, shift2), ... ] 
     mergelet_arr = list()
 
+    #Insert a read_no into the mergelet given another one that may already exist
     def insert_into_mergelet(mergelet, read_no, shift):
         mergelet_inserted = False
+
         for j in range(0,len(mergelet)):
             #Each mergelet's reads will be inherently sorted by shift
             if mergelet[j][1] > shift:
@@ -228,17 +230,14 @@ def naive_polynomial_align(read_arr):
                 if second in first_arr:
                     break
 
-                #Else, add second in
-                mergelet_to_insert_into = mergelet
-
-                #Find location of existing read
+                #Find location of first
                 first_pos = first_arr.index(first)
 
-                #Get shift from first to second, then add shift of existing read
-                second_shift = align_shift_arrs[first][second]
-                second_shift += mergelet[first_pos][1]
+                #Get shift from first to second, then add shift of first
+                insert_shift = align_shift_arrs[first][second]
+                insert_shift += mergelet[first_pos][1]
 
-                insert_into_mergelet(mergelet_to_insert_into, second, second_shift)
+                insert_into_mergelet(mergelet, second, insert_shift)
 
                 break
 
@@ -246,20 +245,24 @@ def naive_polynomial_align(read_arr):
             if second in first_arr:
                 skip_reads = True
 
-                mergelet_to_insert_into = mergelet
+                #If first exists, skip this mergelet
+                if first in first_arr:
+                    break
 
-                #Find location of existing read
-                first_pos = first_arr.index(second)
+                #Find location of second
+                second_pos = first_arr.index(second)
 
-                #Get shift from first to second, then add shift of existing read
-                second_shift = align_shift_arrs[second][first]
-                second_shift += mergelet[first_pos][1]
+                #Get shift from second to first, then add shift of second
+                insert_shift = align_shift_arrs[second][first]
+                insert_shift += mergelet[second_pos][1]
 
-                insert_into_mergelet(mergelet_to_insert_into, first, second_shift)
+                insert_into_mergelet(mergelet, first, insert_shift)
 
                 break
 
         if skip_reads:
+            if VERBOSE:
+                print str((first,second)) + ': ' + str(mergelet_arr)
             continue
 
         #A new mergelet must be created
@@ -278,11 +281,14 @@ def naive_polynomial_align(read_arr):
                 mergelet_arr[-1].append((second,second_shift))
 
         if VERBOSE:
-            print mergelet_arr
+            print str([first,second]) + ': ' + str(mergelet_arr)
+
     if VERBOSE:
         print ''
 
     #Merge mergelets if possible, maintaining sorted order through a linear walk
+
+    #Create list of mergelets to merge, and a separate list of pairs and shifts
     merge_mergelets = list()
     for i in range(0,len(mergelet_arr)):
         for read1 in mergelet_arr[i]:
@@ -292,30 +298,67 @@ def naive_polynomial_align(read_arr):
                         if not [i,j,read1[1]-read2[1]] in merge_mergelets:
                             merge_mergelets.append([i,j,read1[1]-read2[1]])
 
-    #To help maintain topological order
+    #To maintain topological order
     merge_mergelets = merge_mergelets[::-1]
 
     if VERBOSE:
         print("Merging mergelets:")
-        print str(merge_mergelets)
 
-    for (ml1,ml2,all_shift) in merge_mergelets:
+    #These lists will be used for accurately collapsing merges
+    merge_mergelet_pairs = list()
+    merge_mergelet_shifts = list()
+
+    #Go through mergelets one at a time, merging them and collapsing the others
+    #   to maintain consistency.
+    while len(merge_mergelets) > 0:
+        if VERBOSE:
+            print 'To merge: ' + str(merge_mergelets)
+
+        #Get first mergelet in list
+        (ml1,ml2,all_shift) = merge_mergelets.pop(0)
+
+        #Log this, in case other merges use ml1 or ml2
+        merge_mergelet_pairs.append((ml1,ml2))
+        merge_mergelet_shifts.append(all_shift)
+        merge_mergelet_pairs.append((ml2,ml1))
+        merge_mergelet_shifts.append(-all_shift)
+
         for (read,shift) in mergelet_arr[ml2]:
             if not (read, shift+all_shift) in mergelet_arr[ml1]:
                 insert_into_mergelet(mergelet_arr[ml1], read, shift+all_shift)
 
         mergelet_arr.remove(mergelet_arr[ml2])
 
+        if VERBOSE:
+            print 'Merged ' + str([ml1,ml2,all_shift]) + ': ' + str(mergelet_arr)
+
+        #Collapse merges:
         #After the current merge, all merge requests will be subsequently
-        #   shifted down by 1
+        #   shifted down by 1, and the shifts changed to reflect the prior merge
         for i in range(0,len(merge_mergelets)):
             if merge_mergelets[i][0] >= ml2:
+                pair_change = (merge_mergelets[i][0], merge_mergelets[i][0]-1)
+                if pair_change in merge_mergelet_pairs:
+                    consistency_shift = merge_mergelet_shifts[merge_mergelet_pairs.index(pair_change)]
+                    merge_mergelets[i][2] += consistency_shift
+
                 merge_mergelets[i][0] -= 1
+
             if merge_mergelets[i][1] >= ml2:
+                pair_change = (merge_mergelets[i][1], merge_mergelets[i][1]-1)
+                if pair_change in merge_mergelet_pairs:
+                    consistency_shift = merge_mergelet_shifts[merge_mergelet_pairs.index(pair_change)]
+                    merge_mergelets[i][2] += consistency_shift
+
                 merge_mergelets[i][1] -= 1
 
-        if VERBOSE:
-            print str(merge_mergelets)
+            #Mark a redundant merge request for deletion
+            if merge_mergelets[i][0] == merge_mergelets[i][1]:
+                merge_mergelets[i] = [0,0,0]
+
+        #Delete finished merge requests
+        while [0,0,0] in merge_mergelets:
+            merge_mergelets.remove([0,0,0])
 
     if VERBOSE:
         print ''
@@ -386,7 +429,6 @@ def naive_polynomial_align(read_arr):
 def main():
     rseq = ALPHABET
     seq_reads = split_seq(rseq,10,5,10,1.0)
-    #seq_reads = ['MNOPQRSTUV', 'IJKLMNOPQR', 'HIJKLMNOP', 'LMNOPQRS', 'LMNOPQRS', 'KLMNOPQ']
     naive_polynomial_align(seq_reads)
 
 main()
