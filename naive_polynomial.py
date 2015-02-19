@@ -5,18 +5,20 @@ import math
 random.seed()
 
 VERBOSE = False #For printing intermediate steps and debugging
-PROGRESS = True #For printing percentage progress
-letters = ['A','T','G','C']
-ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+letters_dna = ['A','T','G','C']
 
-def get_random_seq(len):
-    if len < 1:
-        len = 1
+ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+letters_alphabet = ['A','B','C','D','E','F','G','H','I','J','K','L','M',
+                    'N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
+
+def random_seq(letters,length):
+    if length < 1:
+        length = 1
 
     ret_str = ""
 
-    for x in range(0,len):
-        ret_str += letters[random.randint(0,3)]
+    for x in range(0,length):
+        ret_str += letters[random.randint(0,len(letters)-1)]
 
     return ret_str
 
@@ -26,7 +28,10 @@ def get_random_seq(len):
 #smallest is the smallest read size, Rmin
 #largest is the smallest read size, Rmax
 #Accuracy will simulate errors in the read with rate A
-def split_seq(seq, num, smallest, largest, accuracy):
+def split_seq(seq, letters, num, smallest, largest, accuracy):
+    if accuracy > 1.0 or accuracy < 0.5:
+        return []
+
     if len(seq) < 1:
         return []
 
@@ -56,13 +61,22 @@ def split_seq(seq, num, smallest, largest, accuracy):
         read_size = random.randint(smallest,largest)
         read_start_pos = random.randint(0,len(seq)-read_size)
         read_end_pos = read_start_pos + read_size
-        read_arr.append(seq[read_start_pos:read_end_pos])
+        new_read = seq[read_start_pos:read_end_pos]
+
+        #introduce errors into reads
+        if accuracy < 1.0:
+            for i in range(0,len(new_read)):
+                if random.randint(0,math.floor(1.0/(1.0-accuracy))) == 0:
+                    nr_list = list(new_read)
+                    nr_list[i] = letters[random.randint(0,len(letters)-1)]
+                    new_read = "".join(nr_list)
+
+        read_arr.append(new_read)
 
     return read_arr
 
 def naive_polynomial_align(read_arr):
-    if PROGRESS:
-        time_begin = time.time()
+    begin_time = time.time()
 
     #Must be sorted/reversed twice to maintain original order... for some reason
     #TODO
@@ -80,15 +94,14 @@ def naive_polynomial_align(read_arr):
     #For each pair of reads [loops: N^2. Total: 0(N^2 * L^2)]
     for r1 in range(0,len(read_arr)-1):
         read1 = read_arr[r1]
-        align_score_arr = list()
         align_shift_arr = list()
 
         for r2 in range(r1+1,len(read_arr)):
             read2 = read_arr[r2]
 
             if read1 == read2:
-                align_score_arr.append(len(read1))
                 align_shift_arr.append(0)
+                align_score_arrs.append((len(read1),r1,r2))
                 continue
 
             #Find the most probable alignment (largest # of matches) [O(L^2)]
@@ -114,97 +127,45 @@ def naive_polynomial_align(read_arr):
                 #Since it cannot be higher than the smaller of the lengths
 
             #Insert max alignment and its degree into the align_arr
-            align_score_arr.append(max_alignment)
             align_shift_arr.append(corresponding_shift)
+            align_score_arrs.append((max_alignment,r1,r2))
 
-        align_score_arrs.append(align_score_arr)
         align_shift_arrs.append(align_shift_arr)
 
-    #Fill in score and shift arrays, which are triangular
-    #   but need to be square [0(N^2)]
-    align_score_arrs.append(list())
+    #Get alignments in the order they should be processed based on max score
+    #The 'a' for loop runs about N^2 times, and the 'in' op takes N iterations
+    #Thus, this takes O(N^3)
+    align_score_arrs = reversed(sorted(align_score_arrs,
+                                       key=lambda x: (x[0],-x[1],-x[2])))
+    align_order = list()
+    ao_first = set()
+    ao_second = set()
+
+    for a in align_score_arrs:
+        if a[0] == 0:
+            if a[2] not in ao_first and a[2] not in ao_second:
+                ao_second.add(a[2])
+                align_order.append((len(read_arr),a[2]))
+        else:
+            ao_first.add(a[1])
+            ao_second.add(a[2])
+
+            align_order.append((a[1],a[2]))
+
+    #Fill in shift array, which is triangular but needs to be square [0(N^2)]
+    #Then align_shift_arrs[i][j] is the amount needed to shift j to align to i
     align_shift_arrs.append(list())
 
-    for j in range(0,len(align_score_arrs)):
-        align_score_arrs[j].insert(0,-1)
+    for j in range(0,len(align_shift_arrs)):
         align_shift_arrs[j].insert(0,0)
         for i in range(0,j)[::-1]:
-            align_score_arrs[j].insert(0,align_score_arrs[i][j-len(read_arr)])
             align_shift_arrs[j].insert(0,-align_shift_arrs[i][j-len(read_arr)])
-
-    #Now align_shift_arrs[i][j] is the amount needed to shift j to align to i
 
     if VERBOSE:
         print 'Alignment-score array:'
         for a in align_score_arrs:
             print a
         print ''
-
-    #Get alignments in the order they should be processed based on max score
-    #The rounds for loop runs N^2 times, and the i&j loops run N^2 times
-    #The length of align_order grows to about N^2/2, so the 'in' op takes O(N^2)
-    #Thus the complexity of this operation is O(N^6), the global bottleneck
-    align_order = list()
-
-    if PROGRESS:
-        print "0% Done"
-        perc_last = 0
-        time_last = time.time()
-
-    N = len(align_score_arrs)
-    for rounds in range(0,N*N-1):
-        if PROGRESS:
-            perc = (100 * rounds / (N*N-1))
-
-            if perc_last != perc:
-                if perc == 0:
-                    eta = 0
-                else:
-                    eta = math.floor((time.time() - time_last)*(100-perc))
-
-                print str(perc) + "% Done" + " ETA: " + str(eta)
-                perc_last = perc
-                time_last = time.time()
-
-        i_max = -1
-        j_max = -1
-        score_max = -1
-        for i in range(0,N):
-            for j in range(0,len(align_score_arrs[i])):
-                
-                if (min(i,j),max(i,j)) in align_order:
-                    continue
-
-                if align_score_arrs[i][j] > score_max:
-                    score_max = align_score_arrs[i][j]
-                    i_max = i
-                    j_max = j
-
-        #If the largest score is 0, then it is in a seperate mergelet completely
-        #Set it to be outside of the read_arr, as a tag for later
-        if score_max == 0:
-            first_arr = list()
-            second_arr = list()
-            for (first,second) in align_order:
-                first_arr.append(first)
-                second_arr.append(second)
-
-            if not max(i_max,j_max) in first_arr:
-                if not max(i_max,j_max) in second_arr:
-                    align_order.append((len(read_arr),max(i_max,j_max)))
-        else:
-            align_order.append((min(i_max,j_max),max(i_max,j_max)))
-
-    '''
-        #Remove smaller read from consideration by setting its column/row to -1
-        #Using the below methods requires rounds
-        #   to be at most len(align_score_arrs)-1
-        for i in range(0,len(align_score_arrs[max(i_max,j_max)])):
-            align_score_arrs[max(i_max,j_max)][i] = -1
-        
-        for a in align_score_arrs:
-            a[max(i_max,j_max)] = -1
-    '''
 
     if VERBOSE:
         print 'Alignment order:'
@@ -423,8 +384,7 @@ def naive_polynomial_align(read_arr):
             print str((final_str, final_string_arr, read_shift_arr))
             print ''
 
-    if PROGRESS:
-        print "Total time: " + str(time.time() - time_begin) + " s"
+    print "Total time: " + str(time.time() - begin_time) + "s"
 
     return aligned_array
 
@@ -445,11 +405,14 @@ def longest_substring(string1, string2):
 def test_naive_single(rseq,seq_reads):
     PRINT_PASS_AND_DATA = True
 
+    if PRINT_PASS_AND_DATA:
+        print 'seq:',rseq,'\n'
+        print 'data:',seq_reads,'\n'
+        print 'coverage: ' + str(math.floor(len(seq_reads)/len(rseq))) + 'x'
+
     aligned_array = naive_polynomial_align(seq_reads)
 
     #Substring test
-    if PRINT_PASS_AND_DATA:
-        print 'data:',seq_reads,'\n'
     for i in range(0,len(aligned_array)):
         if aligned_array[i][0] in rseq:
             if PRINT_PASS_AND_DATA:
@@ -476,6 +439,8 @@ def test_naive_single(rseq,seq_reads):
         if PRINT_PASS_AND_DATA:
             print 'PASSED: No common substrings'
 
+    return aligned_array
+
 def test_naive_multiple(rounds):
     rseq = ALPHABET
 
@@ -483,6 +448,7 @@ def test_naive_multiple(rounds):
         seq_reads = split_seq(rseq,100,5,6,1.0)
         test_naive_single(rseq,seq_reads)
 
-test_naive_single(ALPHABET, split_seq(ALPHABET,5,5,6,1.0))
-
+alph_seq = random_seq(letters_dna,100)
+out = test_naive_single(alph_seq,split_seq(alph_seq,letters_dna,1000,10,20,0.9))
+#print out
 
