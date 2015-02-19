@@ -1,8 +1,11 @@
 import random
+import time
+import math
 
 random.seed()
 
 VERBOSE = False #For printing intermediate steps and debugging
+PROGRESS = True #For printing percentage progress
 letters = ['A','T','G','C']
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -17,6 +20,12 @@ def get_random_seq(len):
 
     return ret_str
 
+#Split a string into an array of random reads
+#seq is the input string to split, length L
+#num is the number of reads in the output, N
+#smallest is the smallest read size, Rmin
+#largest is the smallest read size, Rmax
+#Accuracy will simulate errors in the read with rate A
 def split_seq(seq, num, smallest, largest, accuracy):
     if len(seq) < 1:
         return []
@@ -52,6 +61,9 @@ def split_seq(seq, num, smallest, largest, accuracy):
     return read_arr
 
 def naive_polynomial_align(read_arr):
+    if PROGRESS:
+        time_begin = time.time()
+
     #Must be sorted/reversed twice to maintain original order... for some reason
     #TODO
     read_arr = sorted(read_arr,key=len)[::-1]
@@ -129,13 +141,35 @@ def naive_polynomial_align(read_arr):
         print ''
 
     #Get alignments in the order they should be processed based on max score
+    #The rounds for loop runs N^2 times, and the i&j loops run N^2 times
+    #The length of align_order grows to about N^2/2, so the 'in' op takes O(N^2)
+    #Thus the complexity of this operation is O(N^6), the global bottleneck
     align_order = list()
 
-    for rounds in range(0,len(align_score_arrs)*len(align_score_arrs)-1):
+    if PROGRESS:
+        print "0% Done"
+        perc_last = 0
+        time_last = time.time()
+
+    N = len(align_score_arrs)
+    for rounds in range(0,N*N-1):
+        if PROGRESS:
+            perc = (100 * rounds / (N*N-1))
+
+            if perc_last != perc:
+                if perc == 0:
+                    eta = 0
+                else:
+                    eta = math.floor((time.time() - time_last)*(100-perc))
+
+                print str(perc) + "% Done" + " ETA: " + str(eta)
+                perc_last = perc
+                time_last = time.time()
+
         i_max = -1
         j_max = -1
         score_max = -1
-        for i in range(0,len(align_score_arrs)):
+        for i in range(0,N):
             for j in range(0,len(align_score_arrs[i])):
                 
                 if (min(i,j),max(i,j)) in align_order:
@@ -389,6 +423,9 @@ def naive_polynomial_align(read_arr):
             print str((final_str, final_string_arr, read_shift_arr))
             print ''
 
+    if PROGRESS:
+        print "Total time: " + str(time.time() - time_begin) + " s"
+
     return aligned_array
 
 #Not my own code: from Stack Overflow
@@ -406,7 +443,7 @@ def longest_substring(string1, string2):
     return answer
 
 def test_naive_single(rseq,seq_reads):
-    PRINT_PASS_AND_DATA = False
+    PRINT_PASS_AND_DATA = True
 
     aligned_array = naive_polynomial_align(seq_reads)
 
@@ -443,9 +480,9 @@ def test_naive_multiple(rounds):
     rseq = ALPHABET
 
     for i in range(0,rounds):
-        seq_reads = split_seq(rseq,10,5,6,1.0)
+        seq_reads = split_seq(rseq,100,5,6,1.0)
         test_naive_single(rseq,seq_reads)
 
-test_naive_multiple(1000)
+test_naive_single(ALPHABET, split_seq(ALPHABET,5,5,6,1.0))
 
 
