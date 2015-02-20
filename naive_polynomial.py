@@ -4,7 +4,6 @@ import math
 
 random.seed()
 
-VERBOSE = False #For printing intermediate steps and debugging
 letters_dna = ['A','T','G','C']
 
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -61,7 +60,7 @@ def split_seq(seq, letters, num, smallest, largest, accuracy):
         read_size = random.randint(smallest,largest)
         read_start_pos = random.randint(0,len(seq)-read_size)
         read_end_pos = read_start_pos + read_size
-        new_read = seq[read_start_pos:read_end_pos]
+        new_read = seq[read_start_pos:read_end_pos+1]
 
         #introduce errors into reads
         if accuracy < 1.0:
@@ -75,7 +74,8 @@ def split_seq(seq, letters, num, smallest, largest, accuracy):
 
     return read_arr
 
-def naive_polynomial_align(read_arr):
+#This algorithm runs in O(N^2 * L^2), where N=len(read_arr), L = max read size
+def naive_polynomial_assemble(read_arr):
     begin_time = time.time()
 
     #Must be sorted/reversed twice to maintain original order... for some reason
@@ -99,44 +99,60 @@ def naive_polynomial_align(read_arr):
         for r2 in range(r1+1,len(read_arr)):
             read2 = read_arr[r2]
 
-            if read1 == read2:
-                align_shift_arr.append(0)
-                align_score_arrs.append((len(read1),r1,r2))
-                continue
-
             #Find the most probable alignment (largest # of matches) [O(L^2)]
             max_alignment = 0
+            max_sum_of_squares = 0
             corresponding_shift = len(read1) #Nonsense value
 
             for shift in range(1-len(read2),len(read1)):
                 alignment = 0
+                sum_of_squares = 0
+                sos_length = 0
 
                 overlap1 = read1[max(0,shift):min(len(read1),shift+len(read2))]
                 overlap2 = read2[max(0,-shift):min(len(read2),len(read1)-shift)]
-                #Check that these 2 lengths are the same?
 
                 for i in range(0,len(overlap1)):
                     if overlap1[i] == overlap2[i]:
                         alignment += 1
+                        sos_length += 1
+
+                    if overlap1[i] != overlap2[i]:
+                        sum_of_squares += sos_length*sos_length
+                        sos_length = 0
+
+                sum_of_squares += sos_length*sos_length
 
                 if alignment > max_alignment:
                     max_alignment = alignment
+                    #corresponding_shift = shift
+
+                if sum_of_squares > max_sum_of_squares:
+                    max_sum_of_squares = sum_of_squares
                     corresponding_shift = shift
 
                 #Could add: if max_alignment = min(len(read1),len(read2)): break
                 #Since it cannot be higher than the smaller of the lengths
 
-            #Insert max alignment and its degree into the align_arr
+            #If the max_alignment is insignificant, do not use the pair (r1,r2)
+            #Otherwise, add it into the list of pairs to be merged
             align_shift_arr.append(corresponding_shift)
-            align_score_arrs.append((max_alignment,r1,r2))
+
+            #Determine the lower threshold for including into list
+            #   This formula was essentially deduced empirically
+            lower_threshold = math.pow(min(len(read1),len(read2)),1.5)
+            if max_sum_of_squares > lower_threshold:
+                align_score_arrs.append((max_sum_of_squares,r1,r2))
 
         align_shift_arrs.append(align_shift_arr)
 
     #Get alignments in the order they should be processed based on max score
-    #The 'a' for loop runs about N^2 times, and the 'in' op takes N iterations
-    #Thus, this takes O(N^3)
-    align_score_arrs = reversed(sorted(align_score_arrs,
-                                       key=lambda x: (x[0],-x[1],-x[2])))
+    #This takes O(N^2), since the ao_first & ao_second have constant time 'in'
+    #   and there are N^2 entries in align_score_arrs
+    asa_sorted = sorted(align_score_arrs, key=lambda x: (x[0],-x[1],-x[2]))
+    align_score_arrs = reversed(asa_sorted)
+    align_score_arrs_copy = reversed(asa_sorted)
+
     align_order = list()
     ao_first = set()
     ao_second = set()
@@ -163,11 +179,10 @@ def naive_polynomial_align(read_arr):
 
     if VERBOSE:
         print 'Alignment-score array:'
-        for a in align_score_arrs:
+        for a in align_score_arrs_copy:
             print a
         print ''
 
-    if VERBOSE:
         print 'Alignment order:'
         print align_order
         print ''
@@ -182,7 +197,8 @@ def naive_polynomial_align(read_arr):
     #   If the returned mergelet array has only 1 mergelet, it can be a
     #   single string. Each mergelet in the array is a separate string/contig.
     #Mergelet array structure: [ [mergelet], [mergelet], ... ]
-    #Mergelet structure: [(read1_no, shift1), (read2_no, shift2), ... ] 
+    #Mergelet structure: [(read1_no, shift1), (read2_no, shift2), ... ]
+    #I believe this runs in O(NlogN)
     mergelet_arr = list()
 
     #Insert a read_no into the mergelet given another one that may already exist
@@ -294,7 +310,9 @@ def naive_polynomial_align(read_arr):
                         while len(mergelet_arr[j]) > 0:
                             insert_read = mergelet_arr[j].pop(0)
                             if (insert_read[0], insert_read[1]+shift1-shift2) not in mergelet_arr[i]:
-                                insert_into_mergelet(mergelet_arr[i], insert_read[0], insert_read[1]+shift1-shift2)
+                                insert_into_mergelet(mergelet_arr[i],
+                                                     insert_read[0],
+                                                     insert_read[1]+shift1-shift2)
 
                         if VERBOSE:
                             print mergelet_arr
@@ -328,6 +346,7 @@ def naive_polynomial_align(read_arr):
         print '\nFinal mergelet array:\n',mergelet_arr,'\n'
 
     #Get aligned_array, including aligned reads and predicted final strings
+    #Runs in O(N*L)
     if VERBOSE:
         print 'Aligned-reads array: '
 
@@ -388,67 +407,81 @@ def naive_polynomial_align(read_arr):
 
     return aligned_array
 
-#Not my own code: from Stack Overflow
-def longest_substring(string1, string2):
-    answer = ""
-    len1, len2 = len(string1), len(string2)
-    for i in range(len1):
-        match = ""
-        for j in range(len2):
-            if (i + j < len1 and string1[i + j] == string2[j]):
-                match += string2[j]
-            else:
-                if (len(match) > len(answer)): answer = match
-                match = ""
-    return answer
+#Get the sum-squared score for a string, roughly representing its entropy
+#1.0 means no sequential sequences, >>1.0 means long sequential sequences
+def get_sum_squared_score(instr):
+    char_last = ''
+    count = 0
+    sos_count = 0
+    for i in range(0,len(instr)):
+        if instr[i] == char_last:
+            count += 1
+        else:
+            sos_count += count*count
+            count = 1
+            char_last = instr[i]
+    
+    sos_count += count*count
+    return float(sos_count)/(len(instr))
 
 def test_naive_single(rseq,seq_reads):
-    PRINT_PASS_AND_DATA = True
+    PRINT_DATA = True
 
-    if PRINT_PASS_AND_DATA:
-        print 'seq:',rseq,'\n'
-        print 'data:',seq_reads,'\n'
-        print 'coverage: ' + str(math.floor(len(seq_reads)/len(rseq))) + 'x'
+    if PRINT_DATA:
+        print 'seq:',rseq
+        #print 'data:',seq_reads,'\n'
 
-    aligned_array = naive_polynomial_align(seq_reads)
+        avg_length = 0
+        for lr in seq_reads:
+            avg_length += len(lr)
+        avg_length /= len(seq_reads)
 
-    #Substring test
+        print 'coverage: ' + str(math.floor(avg_length*len(seq_reads)/len(rseq))) + 'x'
+
+    #Get assembled string
+    aligned_array = naive_polynomial_assemble(seq_reads)
+
+    #Check assembled contigs against original sequence
+    rseq_coverage = 0
     for i in range(0,len(aligned_array)):
-        if aligned_array[i][0] in rseq:
-            if PRINT_PASS_AND_DATA:
-                print 'PASSED:', aligned_array[i][0], 'is in', rseq
-        else:
-            print '*FAILED:', aligned_array[i][0], 'is not in', rseq
+        read1 = aligned_array[i][0]
+        read2 = rseq
 
-    #Common substring test: No two returned strings should have a common
-    #   substring (they should have been joined in the algorithm if possible)
-    test2_failed = False
-    for i in range(0,len(aligned_array)):
-        for j in range(i+1,len(aligned_array)):
-            substr = longest_substring(aligned_array[i][0],aligned_array[j][0])
-            if len(substr) > 0:
-                test2_failed = True
-                print '*FAILED:', aligned_array[i][0], 'intersects', aligned_array[j][0]
+        #Find the most probable alignment (largest # of matches) between read1&2
+        max_alignment = 0
+        corresponding_shift = len(read1) #Nonsense value
 
-            substr = longest_substring(aligned_array[j][0],aligned_array[i][0])
-            if len(substr) > 0:
-                test2_failed = True
-                print '*FAILED:', aligned_array[i][0], 'intersects', aligned_array[j][0]
+        for shift in range(1-len(read2),len(read1)):
+            alignment = 0
 
-    if len(aligned_array) > 1 and not test2_failed:
-        if PRINT_PASS_AND_DATA:
-            print 'PASSED: No common substrings'
+            overlap1 = read1[max(0,shift):min(len(read1),shift+len(read2))]
+            overlap2 = read2[max(0,-shift):min(len(read2),len(read1)-shift)]
 
+            for j in range(0,len(overlap1)):
+                if overlap1[j] == overlap2[j]:
+                    alignment += 1
+
+            if alignment > max_alignment:
+                max_alignment = alignment
+
+        rseq_coverage += max_alignment
+
+        if PRINT_DATA:
+            perc_match = math.floor(100*max_alignment/len(read1))
+            print "read",str(i)+"(acc="+str(perc_match)+"%):",read1
+
+    if PRINT_DATA:
+        rseq_match = math.floor(100*rseq_coverage/len(rseq))
+        print "Total  acc="+str(rseq_match)+"%"
+        print "SOS score:",get_sum_squared_score(rseq)
     return aligned_array
 
 def test_naive_multiple(rounds):
-    rseq = ALPHABET
 
     for i in range(0,rounds):
-        seq_reads = split_seq(rseq,100,5,6,1.0)
-        test_naive_single(rseq,seq_reads)
+        seq = random_seq(letters_dna,100)
+        out = test_naive_single(seq,split_seq(seq,letters_dna,300,10,10,1.0))
 
-alph_seq = random_seq(letters_dna,100)
-out = test_naive_single(alph_seq,split_seq(alph_seq,letters_dna,1000,10,20,0.9))
-#print out
+VERBOSE = False #For printing intermediate steps and debugging
+test_naive_multiple(1)
 
