@@ -34,3 +34,28 @@ ADADADADADADADADADAD
 ADADADADADZDADADADAD
 181
 
+Idea: use this sum-of-square scoring in the Needleman-Wunsch algorithm
+Also, try gunzip compression ratio entropy for scoring as well
+    Although I have no idea how that would work for 2 strings...
+
+ADADADADAD
+AGAGAGAGAG
+->*10 = 38B
+AADGAADGAADGAADGAADG*10 = 34B
+
+ADADADADAD
+ADADAZZZZZ
+->*10 = 39B
+AADDAADDAADZAZDZAZDZ*10 = 40B
+
+ADADADADAD
+ADZZADZZAZ
+->*10 = 41B
+AADDAZDZAADDAZDZAADZ*10 = 42B
+
+ADADADADAD
+ADADADADAD
+->*10 = 34B
+AADDAADDAADDAADDAADD*10 = 34B
+
+
