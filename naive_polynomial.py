@@ -21,6 +21,16 @@ def random_seq(letters,length):
 
     return ret_str
 
+#Introduce errors into a string
+def add_error(instr, accuracy, letters):
+    if accuracy < 1.0:
+        for i in range(0,len(instr)):
+            if random.randint(0,math.floor(100.0/(1.0-accuracy))) < 100.0:
+                ins_list = list(instr)
+                ins_list[i] = letters[random.randint(0,len(letters)-1)]
+                instr = "".join(ins_list)
+    return instr
+
 #Split a string into an array of random reads
 #seq is the input string to split, length L
 #num is the number of reads in the output, N
@@ -63,21 +73,127 @@ def split_seq(seq, letters, num, smallest, largest, accuracy):
         new_read = seq[read_start_pos:read_end_pos+1]
 
         #introduce errors into reads
-        if accuracy < 1.0:
-            for i in range(0,len(new_read)):
-                if random.randint(0,math.floor(1.0/(1.0-accuracy))) == 0:
-                    nr_list = list(new_read)
-                    nr_list[i] = letters[random.randint(0,len(letters)-1)]
-                    new_read = "".join(nr_list)
+        new_read = add_error(new_read, accuracy, letters)
 
         read_arr.append(new_read)
 
     return read_arr
 
-#This algorithm runs in O(N^2 * L^2), where N=len(read_arr), L = max read size
-def naive_polynomial_assemble(read_arr):
-    begin_time = time.time()
+#Get the sum-squared score for a string, roughly representing its entropy
+#1.0 means no sequential sequences, >>1.0 means long sequential sequences
+def get_sos_score_single(instr):
+    char_last = ''
+    count = 0
+    sos_count = 0
+    for i in range(0,len(instr)):
+        if instr[i] == char_last:
+            count += 1
+        else:
+            sos_count += count*count
+            count = 1
+            char_last = instr[i]
 
+    sos_count += count*count
+    return float(sos_count)/(len(instr))
+
+#Get the sum-squared score for contiguous similarities between two strings
+#   Runs in O(L^2)
+#The max score is min(len(instr1,instr2))^2, implying the strings are identical
+#A higher score indicates the two strings share more contiguous regions
+#A low score indicates regions may be shared, but the contiguous length is small
+#A zero score indicates completely different strings
+#TODO: consider using another measure of entropy, like gz's compression ratio?
+def get_sos_score(instr1, instr2):
+    #max_alignment = 0 #This is an alt. method of simply counting similar chars
+    max_sum_of_squares = 0
+    corresponding_shift = len(instr1) #Nonsense value
+
+    for shift in range(1-len(instr2),len(instr1)):
+        #alignment = 0
+        sum_of_squares = 0
+        sos_length = 0
+
+        overlap1 = instr1[max(0,shift):min(len(instr1),shift+len(instr2))]
+        overlap2 = instr2[max(0,-shift):min(len(instr2),len(instr1)-shift)]
+
+        for i in range(0,len(overlap1)):
+            if overlap1[i] == overlap2[i]:
+                #alignment += 1
+                sos_length += 1
+
+            if overlap1[i] != overlap2[i]:
+                sum_of_squares += sos_length*sos_length
+                sos_length = 0
+
+        sum_of_squares += sos_length*sos_length
+
+        #if alignment > max_alignment:
+        #    max_alignment = alignment
+        #    corresponding_shift = shift
+
+        if sum_of_squares > max_sum_of_squares:
+            max_sum_of_squares = sum_of_squares
+            corresponding_shift = shift
+
+    return (max_sum_of_squares, corresponding_shift)
+
+def get_str_from_mergelet(mergelet,read_arr):
+    read_shift_arr = list()
+    final_string_arr = list()
+
+    #Find min shift
+    min_shift = mergelet[0][1]
+    for read in mergelet:
+        if read[1] < min_shift:
+            min_shift = read[1]
+
+    #Replace read_no with actual read, and normalize shifts to begin at 0
+    for j in range(0,len(mergelet)):
+        read_shift_arr.append( (read_arr[ mergelet[j][0] ],
+                          mergelet[j][1]-min_shift ) )
+
+    #Find last char's shift; maybe unnecessary?
+    max_shift = 0
+    for read in mergelet:
+        if read[1] + len(read) - 1 > min_shift:
+            max_shift = read[1] + len(read) - 1
+
+    final_str = ''
+    for (read, shift) in read_shift_arr:
+        i = 0
+
+        for char in read:
+            while True:
+                try:
+                    final_string_arr[i+shift]
+                    break
+                except IndexError:
+                    final_string_arr.insert(i+shift, list())
+
+            final_string_arr[i+shift].append(char)
+
+            i += 1
+
+    for char_arr in final_string_arr:
+        char_histo = dict()
+        for char in char_arr:
+            if not char in char_histo:
+                char_histo[char] = 0
+            else:
+                char_histo[char] += 1
+
+        if len(char_histo) == 0:
+            likely_char = ' '
+        else:
+            likely_char = max(char_histo.iterkeys(),
+                              key=(lambda key: char_histo[key]))
+
+        final_str += likely_char
+    return (final_str, final_string_arr, read_shift_arr)
+
+#Get the de novo assembly of a list of reads
+#   Runs in O(N^2 * L^2), where N=len(read_arr), L = max read size
+def naive_polynomial_assemble(read_arr):
     #Must be sorted/reversed twice to maintain original order... for some reason
     #TODO
     read_arr = sorted(read_arr,key=len)[::-1]
@@ -100,49 +216,17 @@ def naive_polynomial_assemble(read_arr):
             read2 = read_arr[r2]
 
             #Find the most probable alignment (largest # of matches) [O(L^2)]
-            max_alignment = 0
-            max_sum_of_squares = 0
-            corresponding_shift = len(read1) #Nonsense value
-
-            for shift in range(1-len(read2),len(read1)):
-                alignment = 0
-                sum_of_squares = 0
-                sos_length = 0
-
-                overlap1 = read1[max(0,shift):min(len(read1),shift+len(read2))]
-                overlap2 = read2[max(0,-shift):min(len(read2),len(read1)-shift)]
-
-                for i in range(0,len(overlap1)):
-                    if overlap1[i] == overlap2[i]:
-                        alignment += 1
-                        sos_length += 1
-
-                    if overlap1[i] != overlap2[i]:
-                        sum_of_squares += sos_length*sos_length
-                        sos_length = 0
-
-                sum_of_squares += sos_length*sos_length
-
-                if alignment > max_alignment:
-                    max_alignment = alignment
-                    #corresponding_shift = shift
-
-                if sum_of_squares > max_sum_of_squares:
-                    max_sum_of_squares = sum_of_squares
-                    corresponding_shift = shift
-
-                #Could add: if max_alignment = min(len(read1),len(read2)): break
-                #Since it cannot be higher than the smaller of the lengths
+            (max_sos, corr_shift) = get_sos_score(read1,read2)
 
             #If the max_alignment is insignificant, do not use the pair (r1,r2)
             #Otherwise, add it into the list of pairs to be merged
-            align_shift_arr.append(corresponding_shift)
+            align_shift_arr.append(corr_shift)
 
             #Determine the lower threshold for including into list
             #   This formula was essentially deduced empirically
             lower_threshold = math.pow(min(len(read1),len(read2)),1.5)
-            if max_sum_of_squares > lower_threshold:
-                align_score_arrs.append((max_sum_of_squares,r1,r2))
+            if max_sos > lower_threshold:
+                align_score_arrs.append((max_sos,r1,r2))
 
         align_shift_arrs.append(align_shift_arr)
 
@@ -352,96 +436,68 @@ def naive_polynomial_assemble(read_arr):
 
     aligned_array = list()
     for mergelet in mergelet_arr:
-        read_shift_arr = list()
-        final_string_arr = list()
-
-        #Find min shift
-        min_shift = mergelet[0][1]
-        for read in mergelet:
-            if read[1] < min_shift:
-                min_shift = read[1]
-
-        #Replace read_no with actual read, and normalize shifts to begin at 0
-        for j in range(0,len(mergelet)):
-            read_shift_arr.append( (read_arr[ mergelet[j][0] ],
-                              mergelet[j][1]-min_shift ) )
-
-        #Find last char's shift; maybe unnecessary?
-        max_shift = 0
-        for read in mergelet:
-            if read[1] + len(read) - 1 > min_shift:
-                max_shift = read[1] + len(read) - 1
-
-        final_str = ''
-        for (read, shift) in read_shift_arr:
-            i = 0
-
-            for char in read:
-                try:
-                    final_string_arr[i+shift]
-                except IndexError:
-                    final_string_arr.insert(i+shift, list())
-
-                final_string_arr[i+shift].append(char)
-
-                i += 1
-
-        for char_arr in final_string_arr:
-            char_histo = dict()
-            for char in char_arr:
-                if not char in char_histo:
-                    char_histo[char] = 0
-                else:
-                    char_histo[char] += 1
-
-            final_str += max(char_histo.iterkeys(),
-                             key=(lambda key: char_histo[key]))
-
-        aligned_array.append((final_str, final_string_arr, read_shift_arr))
+        aligned_array.append(get_str_from_mergelet(mergelet,read_arr))
 
         if VERBOSE:
             print str((final_str, final_string_arr, read_shift_arr))
             print ''
 
-    print "Total time: " + str(time.time() - begin_time) + "s"
+
 
     return aligned_array
 
-#Get the sum-squared score for a string, roughly representing its entropy
-#1.0 means no sequential sequences, >>1.0 means long sequential sequences
-def get_sum_squared_score(instr):
-    char_last = ''
-    count = 0
-    sos_count = 0
-    for i in range(0,len(instr)):
-        if instr[i] == char_last:
-            count += 1
-        else:
-            sos_count += count*count
-            count = 1
-            char_last = instr[i]
-    
-    sos_count += count*count
-    return float(sos_count)/(len(instr))
+#Get the reference-guided assembly of a list of reads
+# Runs in O(N*L*S), where N=len(read_arr), L = max read size, S = input seq size
+def naive_polynomial_ref_assemble(rseq, read_arr):
+    if VERBOSE:
+        print 'Input reads:'
+        print read_arr
+        print ''
 
-def test_naive_single(rseq,seq_reads):
-    PRINT_DATA = True
+    mergelet = list()
+
+    for r in range(0,len(read_arr)):
+        read = read_arr[r]
+        (sos, shift) = get_sos_score(rseq, read)
+        mergelet.append((r,shift))
+
+    mergelet = sorted(mergelet, key=lambda x: (x[1]))
+
+    if VERBOSE:
+        print 'Resulting mergelet:'
+        print mergelet
+
+    return [get_str_from_mergelet(mergelet, read_arr)]
+
+def test_naive_single(rseq,read_arr):
+    PRINT_DATA = False
+    PRINT_BENCHMARK = True
 
     if PRINT_DATA:
         print 'seq:',rseq
-        #print 'data:',seq_reads,'\n'
+        #print 'data:',read_arr,'\n'
 
-        avg_length = 0
-        for lr in seq_reads:
-            avg_length += len(lr)
-        avg_length /= len(seq_reads)
-
-        print 'coverage: ' + str(math.floor(avg_length*len(seq_reads)/len(rseq))) + 'x'
+    #Get coverage
+    avg_length = 0
+    for lr in read_arr:
+        avg_length += len(lr)
+    avg_length /= len(read_arr)
+    coverage = avg_length*len(read_arr)/len(rseq)
 
     #Get assembled string
-    aligned_array = naive_polynomial_assemble(seq_reads)
+    begin_time = time.time()
+
+    #rseq_acc = -1.0
+    #aligned_array = naive_polynomial_assemble(read_arr)
+
+    rseq_acc = 1.0
+    rseq_diff = add_error(rseq, rseq_acc, letters_dna)
+    aligned_array = naive_polynomial_ref_assemble(rseq_diff, read_arr)
+    
+    total_time = time.time() - begin_time
 
     #Check assembled contigs against original sequence
+    perc_match_list = list()
     rseq_coverage = 0
     for i in range(0,len(aligned_array)):
         read1 = aligned_array[i][0]
@@ -466,21 +522,32 @@ def test_naive_single(rseq,seq_reads):
 
         rseq_coverage += max_alignment
 
+        perc_match = math.floor(100*max_alignment/len(read1))
+        perc_match_list.append(perc_match)
+
         if PRINT_DATA:
-            perc_match = math.floor(100*max_alignment/len(read1))
             print "read",str(i)+"(acc="+str(perc_match)+"%):",read1
 
+    rseq_match = 100.0*rseq_coverage/len(rseq)
+
     if PRINT_DATA:
-        rseq_match = math.floor(100*rseq_coverage/len(rseq))
         print "Total  acc="+str(rseq_match)+"%"
-        print "SOS score:",get_sum_squared_score(rseq)
+        #print "SOS score:",get_sos_score_single(rseq)
+
+    perc_match_list_avg = sum(perc_match_list)/len(perc_match_list)
+
+    if PRINT_BENCHMARK:
+        print "%d, %d, %0.1fx, %0.2f%%, %0.2f%%, %0.2f%%, %0.3fs " % \
+            (len(rseq), len(read_arr), coverage,
+             rseq_match, perc_match_list_avg, rseq_acc, total_time)
+
     return aligned_array
 
 def test_naive_multiple(rounds):
 
     for i in range(0,rounds):
-        seq = random_seq(letters_dna,100)
-        out = test_naive_single(seq,split_seq(seq,letters_dna,300,10,10,1.0))
+        seq = random_seq(letters_dna,1000)
+        out = test_naive_single(seq,split_seq(seq,letters_dna,300,100,100,1.0))
 
 VERBOSE = False #For printing intermediate steps and debugging
 test_naive_multiple(1)
