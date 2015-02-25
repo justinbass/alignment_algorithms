@@ -1,12 +1,41 @@
 import math
+import random
 
 #Needleman-Wunsch Contiguous-Match-Promotion
+
+letters_dna = ['A','T','G','C']
+
+#Get a random sequence of letters
+def random_seq(letters,length):
+    if length < 1:
+        length = 1
+
+    ret_str = ""
+
+    for x in range(0,length):
+        ret_str += letters[random.randint(0,len(letters)-1)]
+
+    return ret_str
+
+#Introduce errors into a string in the form of SNPs
+def add_error(instr, accuracy, letters):
+    if accuracy < 1.0:
+        for i in range(0,len(instr)):
+            if random.randint(0,math.floor(100.0/(1.0-accuracy))) < 100.0:
+                ins_list = list(instr)
+                ins_list[i] = letters[random.randint(0,len(letters)-1)]
+                instr = "".join(ins_list)
+    return instr
+
+#def add_random_deletion
+#def add_random_insertion
+#def add_random_cnv
 
 ##########################
 # Needleman Wunsch Alignment
 ##########################
 
-def needlemanWunsch(seqA,seqB,minimumIdentity):
+def needlemanWunsch(seqA,seqB,contig_match_fun):#,minimumIdentity):
     '''
     def ambiguityCode(sequence1,sequence2):
         iupac={ 'AC': 'M',
@@ -47,8 +76,8 @@ def needlemanWunsch(seqA,seqB,minimumIdentity):
         return  per*100.0/len(finalA) if len(finalA)>0 else 0
     '''
 
-    def contig_match_fun(str_len):
-        return math.pow(str_len,2)
+    #def contig_match_fun(str_len):
+    #    return math.pow(str_len,2)
 
     #Get initial score matrix
     matrix = list()
@@ -88,13 +117,14 @@ def needlemanWunsch(seqA,seqB,minimumIdentity):
             maximum.append(matrix[line-1][column]-1)
             matrix[line][column] = max(maximum)
 
-    for m in matrix:
-        print m
-    print ''
+    if VERBOSE:
+        for m in matrix:
+            print m
+        print ''
 
-    for m in contig_match_length:
-        print m
-    print ''
+        for m in contig_match_length:
+            print m
+        print ''
 
     #Trace-back, requiring matrix, seqA, and seqB:
     c=len(seqA)
@@ -142,8 +172,40 @@ def needlemanWunsch(seqA,seqB,minimumIdentity):
     if perc>=minimumIdentity:consensusSequence=ambiguityCode(alignmentA,alignmentB)
     '''
 
-    return [alignmentA,alignmentB]#,perc,consensusSequence]
+    return [alignmentA,alignmentB,matrix[-1][-1]]#,perc,consensusSequence]
 
+VERBOSE = False
 
-print needlemanWunsch('GCATGCU','GATTACA',0)
+def logarithmic(str_len):
+    return math.log(str_len,2)
+
+#The default Needleman-Wunsch algorithm
+def linear(str_len):
+    return str_len
+
+def subsubquadratic(str_len):
+    return math.pow(str_len,1.1)
+
+def subquadratic(str_len):
+    return math.pow(str_len,1.5)
+
+def quadratic(str_len):
+    return math.pow(str_len,2)
+
+def cubic(str_len):
+    return math.pow(str_len,3)
+
+str1 = random_seq(letters_dna, 10)
+str2 = add_error(str1, 0.50, letters_dna)
+[align1,align2,score] = needlemanWunsch(str1,str2,cubic)
+
+print 'Input sequences:'
+print str1
+print str2
+print ''
+
+print 'Aligned sequences with score '+str(score)+':'
+print align1
+print align2
+
 
