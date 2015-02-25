@@ -1,3 +1,5 @@
+import math
+
 #Needleman-Wunsch Contiguous-Match-Promotion
 
 ##########################
@@ -45,16 +47,21 @@ def needlemanWunsch(seqA,seqB,minimumIdentity):
         return  per*100.0/len(finalA) if len(finalA)>0 else 0
     '''
 
+    def contig_match_fun(str_len):
+        return math.pow(str_len,2)
+
     #Get initial score matrix
     matrix = list()
+    contig_match_length = list()
     for i in range(len(seqB)+1):
         matrix.append([0]*(len(seqA)+1))
+        contig_match_length.append([0]*(len(seqA)+1))
 
     match_score = 1
     mismatch_score = -1
     gap_penalty = -1
 
-    matrix[0][0] = 0
+    matrix[0][0] = 0.0
 
     for column in range(1,len(seqA)+1):
         matrix[0][column] = matrix[0][column-1] + gap_penalty
@@ -66,13 +73,26 @@ def needlemanWunsch(seqA,seqB,minimumIdentity):
         for line in range(1,len(seqB)+1):
             maximum=[]
 
-            match = seqA[column-1] == seqB[line-1]
-            maximum.append(matrix[line-1][column-1] + match_score*match + mismatch_score*(match==0))
+            if seqA[column-1] == seqB[line-1]:
+                old_len = contig_match_length[line-1][column-1]
+                new_len = old_len + match_score
+                contig_match_length[line][column] = new_len
+                
+                match_mismatch_addition = contig_match_fun(new_len) - contig_match_fun(old_len)
+            else:
+                contig_match_length[line][column] = 0
+                match_mismatch_addition = mismatch_score
+
+            maximum.append(matrix[line-1][column-1] + match_mismatch_addition)
             maximum.append(matrix[line][column-1]-1)
             maximum.append(matrix[line-1][column]-1)
             matrix[line][column] = max(maximum)
 
     for m in matrix:
+        print m
+    print ''
+
+    for m in contig_match_length:
         print m
     print ''
 
