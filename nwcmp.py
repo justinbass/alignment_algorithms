@@ -50,15 +50,27 @@ def needlemanWunsch(seqA,seqB,minimumIdentity):
     for i in range(len(seqB)+1):
         matrix.append([0]*(len(seqA)+1))
 
+    match_score = 1
+    mismatch_score = -1
+    gap_penalty = -1
+
+    matrix[0][0] = 0
+
+    for column in range(1,len(seqA)+1):
+        matrix[0][column] = matrix[0][column-1] + gap_penalty
+        
+    for line in range(1,len(seqB)+1):
+        matrix[line][0] = matrix[line-1][0] + gap_penalty
+
     for column in range(1,len(seqA)+1):
         for line in range(1,len(seqB)+1):
             maximum=[]
-            maximum.append(matrix[line-1][column-1] +
-                           (seqA[column-1]==seqB[line-1]))
-            maximum.append(matrix[line][column-1])
-            maximum.append(matrix[line-1][column])
 
-            matrix[line][column]=max(maximum)
+            match = seqA[column-1] == seqB[line-1]
+            maximum.append(matrix[line-1][column-1] + match_score*match + mismatch_score*(match==0))
+            maximum.append(matrix[line][column-1]-1)
+            maximum.append(matrix[line-1][column]-1)
+            matrix[line][column] = max(maximum)
 
     for m in matrix:
         print m
