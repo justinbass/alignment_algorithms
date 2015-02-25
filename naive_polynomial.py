@@ -469,6 +469,115 @@ def naive_polynomial_ref_assemble(rseq, read_arr):
 
     return [get_str_from_mergelet(mergelet, read_arr)]
 
+##########################
+# Needleman Wunsch Alignment
+##########################
+
+def needlemanWunsch(seqA,seqB,minimumIdentity):
+    def ambiguityCode(sequence1,sequence2):
+        iupac={'AC': 'M','AG': 'R','AT': 'W','CG': 'S','CT': 'Y','GT': 'K','AN': 'N','GN': 'N','CN': 'N','TN': 'N','NT': 'N',"TY":"C","CY":"C"}
+        consensus=""
+        for i in range(len(sequence1)):
+            l=[sequence1[i],sequence2[i]]
+            if "-" in l:l.remove("-")
+            l=list(set(l))
+            l.sort()
+
+            if len(l)>1:
+                letter="".join(l)
+                if letter not in iupac:
+                    consensus+="N"
+                else:
+                    consensus+=iupac[letter]
+            else:
+                consensus+=l[0]
+        return consensus
+
+    def createMatrix():
+        matrix=[]
+        for i in range(len(seqB)+1):
+            matrix.append([0]*(len(seqA)+1))
+        return matrix
+    
+    matrix=createMatrix()
+
+    def scoreMatrix(matrix):
+        column=1;maximum=[]
+        for i in range(len(seqA)):
+            line=1
+            for j in range(len(seqB)):
+                if seqB[line-1]==seqA[column-1]:
+                    maximum.append(matrix[line-1][column-1]+1)
+                    maximum.append(matrix[line][column-1])
+                    maximum.append(matrix[line-1][column])
+                else:
+                    maximum.append(matrix[line-1][column-1])
+                    maximum.append(matrix[line][column-1])
+                    maximum.append(matrix[line-1][column])
+                    
+                matrix[line][column]=max(maximum)
+
+                maximum=[]
+                
+                line+=1
+                
+            column+=1
+        return matrix
+
+    matrix=scoreMatrix(matrix)
+
+
+    def perIdentity(finalA,finalB,per=0):
+        for k in range(len(finalA)):
+            if finalA[k] == finalB[k]:
+                per+=1
+                
+        return  per*100.0/len(finalA) if len(finalA)>0 else 0
+
+    def traceback(matrix,seqA,seqB):
+        c=len(seqA)
+        l=len(seqB)
+
+        alignmentA="";alignmentB=""
+
+        while (l!=0) and (c!=0):
+            current=matrix[l][c]
+            up=matrix[l-1][c]
+            front=matrix[l][c-1]
+            diagonal=matrix[l-1][c-1]
+
+            maximo=[diagonal,front,up]
+
+            m=max(maximo)
+
+            i=maximo.index(m)
+
+            if (len(set(maximo))==1) or (i==0):#diagonal
+                l-=1;c-=1
+                alignmentA=seqA[c]+alignmentA
+                alignmentB=seqB[l]+alignmentB
+
+            elif i==1:#front
+                c-=1
+                alignmentA=seqA[c]+alignmentA
+                alignmentB="-"+alignmentB
+
+            else:#i==0 #up
+                l-=1
+                alignmentA="-"+alignmentA
+                alignmentB=seqB[l]+alignmentB
+        perc=perIdentity(alignmentA,alignmentB)
+
+        consensusSequence=""
+        if perc>=minimumIdentity:consensusSequence=ambiguityCode(alignmentA,alignmentB)
+            
+        return [alignmentA,alignmentB,perc,consensusSequence]
+
+
+    return traceback(matrix,seqA,seqB)
+
+#print needlemanWunsch('AGTCATGACGTACTGCAG','TGACG',0)
+
 def test_naive_single(rseq,read_arr):
     PRINT_DATA = False
     PRINT_BENCHMARK = True
@@ -550,5 +659,5 @@ def test_naive_multiple(rounds):
         out = test_naive_single(seq,split_seq(seq,letters_dna,300,100,100,1.0))
 
 VERBOSE = False #For printing intermediate steps and debugging
-test_naive_multiple(1)
+#test_naive_multiple(1)
 

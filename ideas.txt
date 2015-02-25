@@ -1,0 +1,172 @@
+Why use reference-guided assembly rather than alignment?
+
+---
+
+De novo and reference-guided sequence assembly:
+
+GCGCAGCTTTACATTATTGGTCCG
+   GCGCAGCTTTACATTATTGGTCCG
+
+ATTATTAGTG
+   ATTAGTGGTC
+
+#test_naive_single('TTTACATTATTAGTGGTCCGCGG', ['TTTACATTAT', 'ATTATTAGTG', 'ATTATTAGTG', 'ATTAGTGGTC', 'TTTACATTAT', 'CATTATTAGT', 'TAGTGGTCCG', 'TAGTGGTCCG', 'ATTAGTGGTC', 'ATTAGTGGTC', 'ATTAGTGGTC', 'TTTACATTAT', 'TTACATTATT', 'TTACATTATT'])
+
+
+CGACAGGGATATCAATCCTCTCTTTATCTG
+  AATCCTCTCTT
+  *      * *
+
+    AGGGATATCAA
+
+Scoring by sum of square contiguous regions
+ADADADADAD
+AGAGAGAGAG
+1+1+1+1+1=5
+
+ADADADADAD
+ADADAZZZZZ
+5^2 = 25
+
+ADADADADAD
+ADZZADZZAZ
+2^2+2^2+1 = 9
+
+ADADADADADADADADADAD
+ADADADADADZDADADADAD
+181
+
+---
+
+The quadratic gap-penalty alteration to the Needleman-Wunsch algorithm:
+(or, the polynomial contiguous-gain, since it doesn't deal with gaps)
+
+Rather than scoring with match(+1), mismatch(-1), indel(-1), I could use
+sum-of-squares by storing the length of the optimal sequence (or just a count
+of the diagonals/matches). Looking up and left needs not change the score,
+as the gap penalty is implicit in reducing the sum-of-squares.
+
+This gives the algorithm space-complexity O(N^4) rather than NW's O(N^3), but
+may be more accurate.
+
+Only the number of diagonals in a direct line needs to be stored, not the cumulative.
+
+Alg 1, match-length only:
+Perform Needleman-Wunsch algorithm. Create a table L that holds the length
+of consecutive strings. For mismatches, -1 will be added normally, and a
+corresponding 0 will be added into L at the current location. For matches,
+add 1 into the table plus the value in the top-left. This value is n, so
+add n^2 - (n-1)^2 as the increment to the top-left in the main matrix. Indels
+occur normally, and set the matrix L to 0.
+
+For example, consider the Needleman Wunsch alignment:
+
+Sequences    Best alignments
+GCATGCU      GCATG-CU      GCA-TGCU      GCAT-GCU
+GATTACA      G-ATTACA      G-ATTACA      G-ATTACA
+
+The quadratic gap-penalty will choose the second and third alignments:
+Sequences    Best alignments
+GCATGCU      GCA-TGCU      GCAT-GCU
+GATTACA      G-ATTACA      G-ATTACA
+
+Since it aligns AT, the longest contiguous segement (except CA, which requires
+a large indel shift of 5). It discourages the indel at the middle T, which
+would be less likely than the sequence AT matching.
+
+
+It also decides between some tricky tandem repeats:
+AGTCAGTCAGTCAGTC
+AGTCAGTC
+
+Best alignments could be:
+AGTCAGTCAGTCAGTC   AGTCAGTCAGTCAGTC   AGTCAGTCAGTCAGTC   AGTCAGTCAGTCAGTC
+AGTCAGTC--------   AGTC--------AGTC   A--------GTCAGTC   --------AGTCAGTC
+
+There are, in fact, N-1 such best alignment for a completely repeated sequence
+
+The quadratic gap-penalty chooses the largest contiguous segments:
+AGTCAGTCAGTCAGTC   AGTCAGTCAGTCAGTC   AGTCAGTCAGTCAGTC
+AGTCAGTC--------   ----AGTCAGTC----   AGTCAGTC--------
+
+Indels cannot directly have a quadratic gap-penalty, since the matrix L would
+be ambiguous to direction. With an affine gap-penalty, this is made up for:
+AGTCAGTCAGTCAGTC   AGTCAGTCAGTCAGTC
+AGTCAGTC           AGTCAGTC--------
+
+It is possible that a quadratic gap penalty could be directly implemented,
+but it might require two more matricies, at least one per direction (indel
+in each sequence).
+
+Mismatches can be considered as part of the contiguous sequence, but less
+likely than matches by incrementing the matrix L by 0.5 along each diagonal.
+
+This all occurs with (I beleive) minimal time and space increases.
+
+Real examples compared with the Scaffold Builder Needleman-Wunsch implementation:
+GCATGCU,GATTACA returns the same as mine...
+AGTCAGTCAGTCAGTC,AGTCAGTC does too...
+
+Perhaps this is totally useless. But! That's not the point.
+
+
+---
+
+"Sequence Assembly Compression Scoring"
+
+Idea: use this sum-of-square scoring in the Needleman-Wunsch algorithm
+Also, try gunzip compression ratio entropy for scoring as well
+
+ADADADADAD
+AGAGAGAGAG
+->*10 = 38B
+AADGAADGAADGAADGAADG*10 = 34B
+
+ADADADADAD
+ADADAZZZZZ
+->*10 = 39B
+AADDAADDAADZAZDZAZDZ*10 = 40B
+
+ADADADADAD
+ADZZADZZAZ
+->*10 = 41B
+AADDAZDZAADDAZDZAADZ*10 = 42B
+
+ADADADADAD
+ADADADADAD
+->*10 = 34B
+AADDAADDAADDAADDAADD*10 = 34B
+
+Rather, strings can be combined multiple times, say 4:
+ADADADADAD
+AGAGAGAGAG
+AAAAAAAADGDGDGDGAAAAAAAADGDGDGDGAAAAAAAADGDGDGDGAAAAAAAADGDGDGDGAAAAAAAADGDGDGDG
+
+Thus the similar base pairs AA will be reduced to log(N), whereas the non-similar
+base pairs DG will be reduced to log(N/2). 
+
+This also accounts for
+non-similar repeating sequences.
+
+Say the two sequences are compared:
+CCCCAGTCAGTCAGTCAGTCAAAA
+CCCCAGTCAAAA
+
+Several optimal alignments are possible depending on scoring:
+CCCCAGACAGTCAGTCAGACAAAA
+CCCCAGTC------------AAAA
+CCCC----AGTC--------AAAA
+CCCC--------AGTC----AAAA
+CCCC------------AGTCAAAA
+
+However, the first and last are clearly correct, as T->A has occured twice.
+Except this case will clearly be caught by existing alignment algorithms...
+
+
+---
+
+BitPAL: http://bioinformatics.oxfordjournals.org/content/30/22/3166.short
+
+Scaffold builder: http://www.scfbm.org/content/8/1/23
+
+Monotonic gap penalties: http://paperity.org/p/41681537/local-sequence-alignments-with-monotonic-gap-penalties
