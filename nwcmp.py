@@ -1,5 +1,6 @@
 import math
 import random
+from functools import partial
 
 #Needleman-Wunsch Contiguous-Match-Promotion
 
@@ -17,192 +18,238 @@ def random_seq(letters,length):
 
     return ret_str
 
-#Introduce errors into a string in the form of SNPs
-def add_error(instr, accuracy, letters):
-    if accuracy < 1.0:
-        for i in range(0,len(instr)):
-            if random.randint(0,math.floor(100.0/(1.0-accuracy))) < 100.0:
-                ins_list = list(instr)
-                ins_list[i] = letters[random.randint(0,len(letters)-1)]
-                instr = "".join(ins_list)
+#Get a bool with uniform frequency
+def uniform_bool(freq):
+    if freq >= 1.0:
+        return True
+
+    if freq <= 0.0:
+        return False
+
+    return random.uniform(0,1.0/freq) < 1.0
+
+#Introduce SNPs into a string in proportion to accuracy
+def add_snps(instr, letters, freq):
+    for i in range(0,len(instr)):
+        if uniform_bool(freq):
+            ins_list = list(instr)
+            ins_list[i] = letters[random.randint(0,len(letters)-1)]
+            instr = "".join(ins_list)
     return instr
 
+#Introduce random insertions into a string with a frequency of an indel starting,
+#   and a distribution of the length of indels: length(frequency)
+#Current version has hard-coded distribution measured empirically
+def add_random_insertion(instr, freq):
+    instrlist = list(instr)
+
+    #Must traverse instrlist backwards so that inserts occur in the correct order
+    for i in reversed(range(0,len(instrlist))):
+        if uniform_bool(freq):
+            length = int(math.floor(1.819*math.pow(random.uniform(0.00001,1.061),-0.654)))
+            instrlist.insert(i,random_seq(letters_dna,length))
+
+    return "".join(instrlist)
+
 #def add_random_deletion
-#def add_random_insertion
 #def add_random_cnv
 
 ##########################
 # Needleman Wunsch Alignment
 ##########################
 
-def needlemanWunsch(seqA,seqB,contig_match_fun):#,minimumIdentity):
-    '''
-    def ambiguityCode(sequence1,sequence2):
-        iupac={ 'AC': 'M',
-                'AG': 'R',
-                'AT': 'W',
-                'CG': 'S',
-                'CT': 'Y',
-                'GT': 'K',
-                'AN': 'N',
-                'GN': 'N',
-                'CN': 'N',
-                'TN': 'N',
-                'NT': 'N',
-                'TY': 'C',
-                'CY': 'C'}
-        consensus=""
-        for i in range(len(sequence1)):
-            l=[sequence1[i],sequence2[i]]
-            if "-" in l:l.remove("-")
-            l=list(set(l))
-            l.sort()
+def logarithmic(str_len,a,b):
+    if str_len == 0:
+        return 0
+    return a + b*math.log(str_len,2.7182818)
 
-            if len(l)>1:
-                letter="".join(l)
-                if letter not in iupac:
-                    consensus+="N"
-                else:
-                    consensus+=iupac[letter]
-            else:
-                consensus+=l[0]
-        return consensus
+#The default Needleman-Wunsch algorithm uses all linear input functions
+def linear(str_len):
+    return str_len
 
-    def perIdentity(finalA,finalB,per=0):
-        for k in range(len(finalA)):
-            if finalA[k] == finalB[k]:
-                per+=1
+def affine(str_len,a,b):
+    return a + b*str_len
 
-        return  per*100.0/len(finalA) if len(finalA)>0 else 0
-    '''
+def subsubquadratic(str_len,a,b):
+    return a + b*math.pow(str_len,1.1)
 
-    #def contig_match_fun(str_len):
-    #    return math.pow(str_len,2)
+def subquadratic(str_len,a,b):
+    return a + b*math.pow(str_len,1.5)
 
-    #Get initial score matrix
-    matrix = list()
-    contig_match_length = list()
+def quadratic(str_len,a,b):
+    return a + b*math.pow(str_len,2)
+
+def cubic(str_len,a,b):
+    return a + b*math.pow(str_len,3)
+
+def exponential(str_len,a,b):
+    return a + b*math.pow(2.7182818,str_len)
+
+def needlemanWunsch(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
+    #Get score matrix
+    scoremat = list()
+
+    #Three lists for keeping track of continuous matches and indels
+    Dmat = list()
+    Dmis = list()
+    Vind = list()
+    Hind = list()
+
     for i in range(len(seqB)+1):
-        matrix.append([0]*(len(seqA)+1))
-        contig_match_length.append([0]*(len(seqA)+1))
-
-    match_score = 1
-    mismatch_score = -1
-    gap_penalty = -1
-
-    matrix[0][0] = 0.0
+        scoremat.append([0.0]*(len(seqA)+1))
+        Dmat.append([0.0]*(len(seqA)+1))
+        Dmis.append([0.0]*(len(seqA)+1))
+        Vind.append([0.0]*(len(seqA)+1))
+        Hind.append([0.0]*(len(seqA)+1))
 
     for column in range(1,len(seqA)+1):
-        matrix[0][column] = matrix[0][column-1] + gap_penalty
+        Hind[0][column] = Hind[0][column-1] + 1.0
+        Hind_score = gappen_fun(Hind[0][column]) - gappen_fun(Hind[0][column-1])
+        scoremat[0][column] = scoremat[0][column-1] - Hind_score
         
     for line in range(1,len(seqB)+1):
-        matrix[line][0] = matrix[line-1][0] + gap_penalty
+        Vind[line][0] = Vind[line-1][0] + 1.0
+        Vind_score = gappen_fun(Vind[line][0]) - gappen_fun(Vind[line-1][0])
+        scoremat[line][0] = scoremat[line-1][0] - Vind_score
 
     for column in range(1,len(seqA)+1):
         for line in range(1,len(seqB)+1):
-            maximum=[]
 
             if seqA[column-1] == seqB[line-1]:
-                old_len = contig_match_length[line-1][column-1]
-                new_len = old_len + match_score
-                contig_match_length[line][column] = new_len
-                
-                match_mismatch_addition = contig_match_fun(new_len) - contig_match_fun(old_len)
-            else:
-                contig_match_length[line][column] = 0
-                match_mismatch_addition = mismatch_score
+                Dmis[line][column] = 0.0
 
-            maximum.append(matrix[line-1][column-1] + match_mismatch_addition)
-            maximum.append(matrix[line][column-1]-1)
-            maximum.append(matrix[line-1][column]-1)
-            matrix[line][column] = max(maximum)
+                length = Dmat[line-1][column-1] + 1.0
+                Dmat[line][column] = length
+                match_score = match_fun(length) - match_fun(length - 1)
+            else:
+                Dmat[line][column] = 0.0
+
+                length = Dmis[line-1][column-1] + 1.0
+                Dmis[line][column] = length
+                match_score = -(mismatch_fun(length) - mismatch_fun(length - 1))
+
+            #Set the Vind and Hind matrices to increment for now
+            #   if match/mismatch is more optimal, these will be set to 0 later
+            Hind[line][column] = Hind[line][column-1] + 1.0
+            Vind[line][column] = Vind[line-1][column] + 1.0
+
+            Hind_score = gappen_fun(Hind[line][column]) - gappen_fun(Hind[line][column-1])
+            Vind_score = gappen_fun(Vind[line][column]) - gappen_fun(Vind[line-1][column])
+
+            diagonal = scoremat[line-1][column-1] + match_score
+            left = scoremat[line][column-1] - Hind_score
+            up = scoremat[line-1][column] - Vind_score
+
+            maximum = [diagonal, left, up]
+            m = max(maximum)
+            scoremat[line][column] = m
+
+            #up == left == diagonal OR diagonal (lazy eval)
+            if (len(set(maximum))==1) or (m == diagonal):
+                Vind[line][column] = 0.0
+                Hind[line][column] = 0.0
+
+            #left
+            elif m == left:
+                Dmat[line][column] = 0.0
+                Dmis[line][column] = 0.0
+
+            #up
+            else:
+                Dmat[line][column] = 0.0
+                Dmis[line][column] = 0.0
+            
 
     if VERBOSE:
-        for m in matrix:
+        print 'Score:'
+        for m in scoremat:
+            for i in range(0,len(m)):
+                m[i] = round(m[i],2)
             print m
         print ''
 
-        for m in contig_match_length:
+        print 'Match Length:'
+        for m in Dmat:
             print m
         print ''
 
-    #Trace-back, requiring matrix, seqA, and seqB:
-    c=len(seqA)
-    l=len(seqB)
+        print 'Mismatch Length:'
+        for m in Dmis:
+            print m
+        print ''
+
+        print 'Horizontal Indel Length:'
+        for m in Hind:
+            print m
+        print ''
+
+        print 'Vertical Indel Length:'
+        for m in Vind:
+            print m
+        print ''
+
+    #Traceback:
+    a = len(seqA) #column
+    b = len(seqB) #line
 
     alignmentA=""
     alignmentB=""
 
-    while (l!=0) and (c!=0):
-        #current=matrix[l][c]
-        up=matrix[l-1][c]
-        front=matrix[l][c-1]
-        diagonal=matrix[l-1][c-1]
+    while (a != 0) and (b != 0):
+        up = scoremat[b-1][a]
+        left = scoremat[b][a-1]
+        diagonal = scoremat[b-1][a-1]
 
-        maximo=[diagonal,front,up]
+        maximum = [diagonal,left,up]
+        m = max(maximum)
 
-        m=max(maximo)
+        #up == left == diagonal OR diagonal (lazy eval)
+        if (len(set(maximum))==1) or (m == diagonal):
+            a-=1
+            b-=1
+            alignmentA=seqA[a]+alignmentA
+            alignmentB=seqB[b]+alignmentB
 
-        #i=maximo.index(m)
-
-        #diagonal
-        #up == front == diagonal or i == 0
-        if (len(set(maximo))==1) or (m == diagonal):
-            l-=1;c-=1
-            alignmentA=seqA[c]+alignmentA
-            alignmentB=seqB[l]+alignmentB
-
-        #front
-        #i == 1
-        elif m == front:
-            c-=1
-            alignmentA=seqA[c]+alignmentA
+        #left
+        elif m == left:
+            a-=1
+            alignmentA=seqA[a]+alignmentA
             alignmentB="-"+alignmentB
 
         #up
-        #i == 2, e.g. m == up
         else:
-            l-=1
+            b-=1
             alignmentA="-"+alignmentA
-            alignmentB=seqB[l]+alignmentB
+            alignmentB=seqB[b]+alignmentB
 
-    '''
-    perc=perIdentity(alignmentA,alignmentB)
-    consensusSequence=""
-    if perc>=minimumIdentity:consensusSequence=ambiguityCode(alignmentA,alignmentB)
-    '''
-
-    return [alignmentA,alignmentB,matrix[-1][-1]]#,perc,consensusSequence]
+    return [alignmentA,alignmentB,scoremat[-1][-1]]
 
 VERBOSE = False
 
-def logarithmic(str_len):
-    return math.log(str_len,2)
+str1 = random_seq(letters_dna, 20)
 
-#The default Needleman-Wunsch algorithm
-def linear(str_len):
-    return str_len
+str2 = add_random_insertion(str1, 0.05)
+str2 = add_snps(str2, letters_dna, 0.1)
 
-def subsubquadratic(str_len):
-    return math.pow(str_len,1.1)
+str1 = 'ACGACGCTAAGATCGGGCCA'
+str2 = 'ACCGTGGGGCACTAAACGGCTAGCAACCCTAATGGTTTTGTACATAATAAGACGGACGATCGTAAGCCATGATCGGGCCA'
 
-def subquadratic(str_len):
-    return math.pow(str_len,1.5)
-
-def quadratic(str_len):
-    return math.pow(str_len,2)
-
-def cubic(str_len):
-    return math.pow(str_len,3)
-
-str1 = random_seq(letters_dna, 10)
-str2 = add_error(str1, 0.50, letters_dna)
-[align1,align2,score] = needlemanWunsch(str1,str2,cubic)
+#str1 = 'GCATGCU'
+#str2 = 'GATTACA'
 
 print 'Input sequences:'
 print str1
 print str2
 print ''
+
+[align1,align2,score] = needlemanWunsch(str1,str2,partial(exponential,a=0,b=1),partial(linear),partial(logarithmic,a=0,b=1))
+
+print 'Aligned sequences with score '+str(score)+':'
+print align1
+print align2
+print ''
+
+[align1,align2,score] = needlemanWunsch(str1,str2,partial(quadratic,a=0,b=1),partial(linear),partial(logarithmic,a=0,b=1))
 
 print 'Aligned sequences with score '+str(score)+':'
 print align1
