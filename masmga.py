@@ -119,6 +119,10 @@ def add_random_deletion(instr, freq, dist_length):
 
     return "".join(instrlist)
 
+#Introduce random Copy-Number Variations
+#   freq: Freqeuncy of a CNV starting
+#   dist_length: Distribution of length of copied string
+#   dist_copies: Distribution of number of copies
 def add_random_cnv(instr, freq, dist_length, dist_copies):
     instrlist = list(instr)
 
@@ -145,17 +149,6 @@ def add_random_cnv(instr, freq, dist_length, dist_copies):
                     instrlist.insert(i,copy_letter)
 
     return "".join(instrlist)
-    
-str1 = random_seq(letters_dna, 100)
-str2 = str1
-#str2 = add_random_insertion(str2, empirical_ins_size_dist, 0.05)
-#str2 = add_random_deletion(str2, empirical_del_size_dist, 0.05)
-#str2 = add_random_cnv(str2, 0.1, partial(linear,str_len=4),partial(linear,str_len=3))
-
-print str1
-print str2
-
-exit()
 
 ################################################################################
 # The Main MASMGA Function
@@ -345,9 +338,12 @@ PRINT_IN_OUT = True
 VERBOSE = False
 
 str1 = random_seq(letters_dna, 20)
+str2 = str1
 
-str2 = add_random_insertion(str1, 0.05)
-str2 = add_snps(str2, letters_dna, 0.1)
+str2 = add_random_insertion(str2, 0.05, empirical_ins_size_dist)
+str2 = add_random_deletion(str2, 0.05, empirical_del_size_dist)
+str2 = add_random_cnv(str2, 0.1, partial(linear,str_len=4),partial(linear,str_len=1))
+str2 = add_snps(str2, 0.1, letters_dna)
 
 #Test case 1
 #str1 = 'GCATGCU'
