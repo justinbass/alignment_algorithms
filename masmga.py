@@ -127,11 +127,15 @@ def add_random_cnv(instr, freq, dist_length, dist_copies):
         if uniform_bool(freq):
             length = int(math.floor(dist_length()))
 
+            #Get string to be copied
             copy_string = ""
             for j in range(0, min(length,len(instrlist)-i)):
                 copy_string += instrlist[i+j]
             copy_string = list(copy_string)
-            cstr = copy_string
+
+            #Reverse so the list is inserted backwards, e.g. reading forwards
+            #TODO: If this line is removed, copies will be backwards. This might
+            #   be biologically plausible with some small frequency.
             copy_string.reverse()
 
             #Insert the copy_string a number of times according to dist_copies()
