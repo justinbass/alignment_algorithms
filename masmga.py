@@ -315,6 +315,11 @@ def monotonicAlign(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
 
     return [alignmentA,alignmentB]
 
+################################################################################
+# Testing and Data Collection
+################################################################################
+
+#Return the alignment score, matches/(matches+mismatches+indels)
 def score_alignment(align1,align2,letters):
     if len(align1) != len(align2):
         return -1
@@ -330,9 +335,28 @@ def score_alignment(align1,align2,letters):
 
     return matches / (matches + mismatches_indels)
 
-################################################################################
-# Testing and Data Collection
-################################################################################
+#Get the indel distribution as a dictionary: key=length, value=frequency
+def get_indel_dist(align1,align2):
+    indel_dist = dict()
+
+    for align in [align1,align2]:
+        #Set a fake last letter to allow parsing of the real last letter
+        align += ' '
+
+        indel_len = 0
+        for c in align:
+            if c == '-':
+                indel_len += 1
+            else:
+                if indel_len > 0:
+                    if not indel_len in indel_dist:
+                        indel_dist[indel_len] = 0
+
+                    indel_dist[indel_len] += 1
+
+                    indel_len = 0
+
+    return indel_dist
 
 PRINT_IN_OUT = True
 VERBOSE = False
@@ -369,11 +393,13 @@ if PRINT_IN_OUT:
                                  partial(affine,a=4,b=2))
 
 score = score_alignment(align1,align2,letters_dna)
+indel_dist = get_indel_dist(align1,align2)
 
 if PRINT_IN_OUT:
     print 'Aligned sequences with score '+str(score)+':'
     print align1
     print align2
+    print 'Indel Distribution: ' + str(indel_dist)
     print ''
 
 
