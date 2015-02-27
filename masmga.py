@@ -1,61 +1,17 @@
+################################################################################
+# Monotonic Alignment Sequential-Match/Mismatch-Gain Algorithm (MASMGA)
+################################################################################
+
 import math
 import random
 from functools import partial
 
-#Monotonic Alignment Sequential-Match/Mismatch-Gain Algorithm (MASMGA)
-
 letters_dna = ['A','T','G','C']
 E = 2.7182818
 
-#Get a random sequence of letters
-def random_seq(letters,length):
-    if length < 1:
-        length = 1
-
-    ret_str = ""
-
-    for x in range(0,length):
-        ret_str += letters[random.randint(0,len(letters)-1)]
-
-    return ret_str
-
-#Get a bool with uniform frequency
-def uniform_bool(freq):
-    if freq >= 1.0:
-        return True
-
-    if freq <= 0.0:
-        return False
-
-    return random.uniform(0,1.0/freq) < 1.0
-
-#Introduce SNPs into a string in proportion to accuracy
-def add_snps(instr, letters, freq):
-    for i in range(0,len(instr)):
-        if uniform_bool(freq):
-            ins_list = list(instr)
-            ins_list[i] = letters[random.randint(0,len(letters)-1)]
-            instr = "".join(ins_list)
-    return instr
-
-#Introduce random insertions into a string with a frequency of an indel starting,
-#   and a distribution of the length of indels: length(frequency)
-#Current version has hard-coded distribution measured empirically
-def add_random_insertion(instr, freq):
-    instrlist = list(instr)
-
-    #Must traverse instrlist backwards so that inserts occur in the correct order
-    for i in reversed(range(0,len(instrlist))):
-        if uniform_bool(freq):
-            length = int(math.floor(1.819*math.pow(random.uniform(0.00001,1.061),-0.654)))
-            instrlist.insert(i,random_seq(letters_dna,length))
-
-    return "".join(instrlist)
-
-#def add_random_deletion
-#def add_random_cnv
-
-
+################################################################################
+# Functions and Random Distributions
+################################################################################
 
 #If c is 0, then str_len = 1 will return 0, which may be undesirable, as this
 #   implies that the first indel/match will be ignored. I suggest a value of c=1
@@ -90,6 +46,92 @@ def cubic(str_len,a,b):
 
 def exponential(str_len,a,b):
     return a + b*math.pow(E, str_len)
+
+#Empirically measured indel size distribution
+def empirical_indel_size_dist():
+    return 1.819*math.pow(random.uniform(0.00001,1.061),-0.654)
+
+#TODO: This has not been checked
+def empirical_ins_size_dist():
+    return 1.414*1.819*math.pow(random.uniform(0.00001,1.061),-0.654)
+
+#TODO: This has not been checked
+def empirical_del_size_dist():
+    return (1.0/1.414)*1.819*math.pow(random.uniform(0.00001,1.061),-0.654)
+
+#Get a bool with uniform frequency
+def uniform_bool(freq):
+    if freq >= 1.0:
+        return True
+
+    if freq <= 0.0:
+        return False
+
+    return random.uniform(0,1.0/freq) < 1.0
+
+################################################################################
+# Sequence Creation and Modification Functions
+################################################################################
+
+#Get a random sequence of letters
+def random_seq(letters,length):
+    ret_str = ""
+    for x in range(0,max(length,1)):
+        ret_str += letters[random.randint(0,len(letters)-1)]
+    return ret_str
+
+#Introduce SNPs into a string in proportion to accuracy
+def add_snps(instr, letters, freq):
+    for i in range(0,len(instr)):
+        if uniform_bool(freq):
+            ins_list = list(instr)
+            ins_list[i] = letters[random.randint(0,len(letters)-1)]
+            instr = "".join(ins_list)
+    return instr
+
+#Introduce random insertions into a string with a frequency of an insertion
+#   starting, and a distribution of the length of insertion once started
+def add_random_insertion(instr, distribution, freq):
+    instrlist = list(instr)
+
+    #Must traverse instrlist backwards so that inserts occur in the correct order
+    for i in reversed(range(0,len(instrlist))):
+        if uniform_bool(freq):
+            length = int(math.floor(distribution()))
+            instrlist.insert(i,random_seq(letters_dna,length))
+
+    return "".join(instrlist)
+
+#Introduce random deletions into a string with a frequency of an deletion
+#   starting, and a distribution of the length of deletion once started
+def add_random_deletion(instr, distribution, freq):
+    instrlist = list(instr)
+
+    #Must traverse instrlist backwards so that inserts occur in the correct order
+    for i in reversed(range(0,len(instrlist))):
+        if uniform_bool(freq):
+            length = int(math.floor(distribution()))
+
+            for j in range(0, min(length,len(instrlist)-i)):
+                instrlist.pop(i)
+
+    return "".join(instrlist)
+
+#TODO def add_random_cnv
+
+str1 = random_seq(letters_dna, 100)
+str2 = str1
+#str2 = add_random_insertion(str2, empirical_ins_size_dist, 0.05)
+#str2 = add_random_deletion(str2, empirical_del_size_dist, 0.05)
+
+print str1
+print str2
+
+exit()
+
+################################################################################
+# The Main MASMGA Function
+################################################################################
 
 def monotonicAlign(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
     #Get score matrix
@@ -266,6 +308,10 @@ def score_alignment(align1,align2,letters):
             mismatches_indels += 1.0
 
     return matches / (matches + mismatches_indels)
+
+################################################################################
+# Testing and Data Collection
+################################################################################
 
 PRINT_IN_OUT = True
 VERBOSE = False
