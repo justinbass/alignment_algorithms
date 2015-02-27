@@ -81,7 +81,7 @@ def random_seq(letters,length):
     return ret_str
 
 #Introduce SNPs into a string in proportion to accuracy
-def add_snps(instr, letters, freq):
+def add_snps(instr, freq, letters):
     for i in range(0,len(instr)):
         if uniform_bool(freq):
             ins_list = list(instr)
@@ -91,38 +91,62 @@ def add_snps(instr, letters, freq):
 
 #Introduce random insertions into a string with a frequency of an insertion
 #   starting, and a distribution of the length of insertion once started
-def add_random_insertion(instr, distribution, freq):
+def add_random_insertion(instr, freq, dist_length):
     instrlist = list(instr)
 
     #Must traverse instrlist backwards so that inserts occur in the correct order
     for i in reversed(range(0,len(instrlist))):
         if uniform_bool(freq):
-            length = int(math.floor(distribution()))
+            length = int(math.floor(dist_length()))
             instrlist.insert(i,random_seq(letters_dna,length))
 
     return "".join(instrlist)
 
 #Introduce random deletions into a string with a frequency of an deletion
 #   starting, and a distribution of the length of deletion once started
-def add_random_deletion(instr, distribution, freq):
+def add_random_deletion(instr, freq, dist_length):
     instrlist = list(instr)
 
     #Must traverse instrlist backwards so that inserts occur in the correct order
     for i in reversed(range(0,len(instrlist))):
         if uniform_bool(freq):
-            length = int(math.floor(distribution()))
+            length = int(math.floor(dist_length()))
 
+            #j is only used for counting up. We want to remove at position i to
+            #   avoid deleting off the end of the list.
             for j in range(0, min(length,len(instrlist)-i)):
                 instrlist.pop(i)
 
     return "".join(instrlist)
 
-#TODO def add_random_cnv
+def add_random_cnv(instr, freq, dist_length, dist_copies):
+    instrlist = list(instr)
 
+    #Must traverse instrlist backwards so that inserts occur in the correct order
+    for i in reversed(range(0,len(instrlist))):
+        if uniform_bool(freq):
+            length = int(math.floor(dist_length()))
+
+            copy_string = ""
+            for j in range(0, min(length,len(instrlist)-i)):
+                copy_string += instrlist[i+j]
+            copy_string = list(copy_string)
+            cstr = copy_string
+            copy_string.reverse()
+
+            #Insert the copy_string a number of times according to dist_copies()
+            copies = dist_copies()
+            for j in range(0, copies):
+                for copy_letter in copy_string:
+                    instrlist.insert(i,copy_letter)
+
+    return "".join(instrlist)
+    
 str1 = random_seq(letters_dna, 100)
 str2 = str1
 #str2 = add_random_insertion(str2, empirical_ins_size_dist, 0.05)
 #str2 = add_random_deletion(str2, empirical_del_size_dist, 0.05)
+#str2 = add_random_cnv(str2, 0.1, partial(linear,str_len=4),partial(linear,str_len=3))
 
 print str1
 print str2
