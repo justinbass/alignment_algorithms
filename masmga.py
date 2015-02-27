@@ -358,48 +358,78 @@ def get_indel_dist(align1,align2):
 
     return indel_dist
 
-PRINT_IN_OUT = True
 VERBOSE = False
+PRINT_IN_OUT = False
 
-str1 = random_seq(letters_dna, 20)
-str2 = str1
+trials = 100
+str_length = 100
 
-str2 = add_random_insertion(str2, 0.05, empirical_ins_size_dist)
-str2 = add_random_deletion(str2, 0.05, empirical_del_size_dist)
-str2 = add_random_cnv(str2, 0.1, partial(linear,str_len=4),partial(linear,str_len=1))
-str2 = add_snps(str2, 0.1, letters_dna)
+#funs = [logarithmic,linear,affinelog,affine,subsubquadratic,subquadratic,
+#        quadratic,cubic,exponential]
 
-#Test case 1
-#str1 = 'GCATGCU'
-#str2 = 'GATTACA'
+funs = list()
+for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,4)]:
+    funs.append(partial(affine,a=aa,b=bb))
 
-#Test case 2
-#str1 = 'ACGACGCTAAGATCGGGCCA'
-#str2 = 'ACCGTGGGGCACTAAACGGCTAGCAACCCTAATGGTTTTGTACATAATAAGACGGACGATCGTAAGCCATGATCGGGCCA'
+trials_grid = [(mat_fun, mismat_fun, gap_fun) for mat_fun in funs
+                                              for mismat_fun in funs
+                                              for gap_fun in funs]
 
-#Test case 3
-#str1 = 'AAA'
-#str2 = 'ACCGTGGGGCACTAAACGGCTAGCA'
+print 'score,match_fun,a,b,mismatch_fun,a,b,gap_fun,a,b'
 
-if PRINT_IN_OUT:
-    print 'Input sequences:'
-    print str1
-    print str2
-    print ''
+for mat_fun, mismat_fun, gap_fun in trials_grid:
+    total_score = 0
+    for t in range(trials):
+        str1 = random_seq(letters_dna, str_length)
+        str2 = str1
 
-[align1,align2] = monotonicAlign(str1,str2,
-                                 partial(affine,a=0,b=2),
-                                 partial(linear),
-                                 partial(affine,a=4,b=2))
+        str2 = add_random_insertion(str2, 0.02, empirical_ins_size_dist)
+        str2 = add_random_deletion(str2, 0.02, empirical_del_size_dist)
+        str2 = add_random_cnv(str2, 0.02, partial(linear,str_len=4),partial(linear,str_len=1))
+        str2 = add_snps(str2, 0.02, letters_dna)
 
-score = score_alignment(align1,align2,letters_dna)
-indel_dist = get_indel_dist(align1,align2)
+        [align1,align2] = monotonicAlign(str1,str2,
+                                         mat_fun,
+                                         mismat_fun,
+                                         gap_fun)
 
-if PRINT_IN_OUT:
-    print 'Aligned sequences with score '+str(score)+':'
-    print align1
-    print align2
-    print 'Indel Distribution: ' + str(indel_dist)
-    print ''
+        score = score_alignment(align1,align2,letters_dna)
+        indel_dist = get_indel_dist(align1,align2)
+
+        total_score += score
+
+        if PRINT_IN_OUT:
+            print 'Input seqs:\n'+str1+'\n'+str2+'\n'
+            print 'Aligned seqs (score '+str(score)+'):\n'+align1+'\n'+align2
+            print 'Indel Distribution: ' + str(indel_dist) + '\n'
+
+    ma_name = mat_fun.func.__name__
+    args = mat_fun.keywords
+    ma = args['a'] if 'a' in args else ''
+    mb = args['b'] if 'b' in args else ''
+    mc = args['c'] if 'c' in args else ''
+    md = args['d'] if 'd' in args else ''
+
+    mma_name = mismat_fun.func.__name__
+    args = mismat_fun.keywords
+    mma = args['a'] if 'a' in args else ''
+    mmb = args['b'] if 'b' in args else ''
+    mmc = args['c'] if 'c' in args else ''
+    mmd = args['d'] if 'd' in args else ''
+
+    gf_name = gap_fun.func.__name__
+    args = gap_fun.keywords
+    ga = args['a'] if 'a' in args else ''
+    gb = args['b'] if 'b' in args else ''
+    gc = args['c'] if 'c' in args else ''
+    gd = args['d'] if 'd' in args else ''
+
+    total_score /= trials
+    print str(total_score)+','+\
+          str(ma_name)+','+str(ma)+','+str(mb)+','+str(mc)+','+str(md)+\
+          str(mma_name)+','+str(mma)+','+str(mmb)+','+str(mmc)+','+str(mmd)+\
+          str(gf_name)+','+str(ga)+','+str(gb)+','+str(gc)+','+str(gd)
+
+
 
 
