@@ -2,9 +2,10 @@ import math
 import random
 from functools import partial
 
-#Needleman-Wunsch Contiguous-Match-Promotion
+#Monotonic Alignment Sequential-Match/Mismatch-Gain Algorithm (MASMGA)
 
 letters_dna = ['A','T','G','C']
+E = 2.7182818
 
 #Get a random sequence of letters
 def random_seq(letters,length):
@@ -54,38 +55,43 @@ def add_random_insertion(instr, freq):
 #def add_random_deletion
 #def add_random_cnv
 
-##########################
-# Needleman Wunsch Alignment
-##########################
 
-def logarithmic(str_len,a,b):
-    if str_len == 0:
+
+#If c is 0, then str_len = 1 will return 0, which may be undesirable, as this
+#   implies that the first indel/match will be ignored. I suggest a value of c=1
+def logarithmic(str_len,a,b,c):
+    if str_len + c <= 0:
         return 0
-    return a + b*math.log(str_len,2.7182818)
+    return a + b*math.log(str_len + c, E)
 
 #The default Needleman-Wunsch algorithm uses all linear input functions
 def linear(str_len):
     return str_len
 
+def affinelog(str_len,a,b,c,d):
+    if str_len + d <= 0:
+        return 0
+    return a + b*str_len + c*math.log(str_len + d, E)
+
 def affine(str_len,a,b):
     return a + b*str_len
 
 def subsubquadratic(str_len,a,b):
-    return a + b*math.pow(str_len,1.1)
+    return a + b*math.pow(str_len, 1.1)
 
 def subquadratic(str_len,a,b):
-    return a + b*math.pow(str_len,1.5)
+    return a + b*math.pow(str_len, 1.5)
 
 def quadratic(str_len,a,b):
-    return a + b*math.pow(str_len,2)
+    return a + b*math.pow(str_len, 2)
 
 def cubic(str_len,a,b):
-    return a + b*math.pow(str_len,3)
+    return a + b*math.pow(str_len, 3)
 
 def exponential(str_len,a,b):
-    return a + b*math.pow(2.7182818,str_len)
+    return a + b*math.pow(E, str_len)
 
-def needlemanWunsch(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
+def monotonicAlign(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
     #Get score matrix
     scoremat = list()
 
@@ -195,10 +201,30 @@ def needlemanWunsch(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
     alignmentA=""
     alignmentB=""
 
-    while (a != 0) and (b != 0):
-        up = scoremat[b-1][a]
-        left = scoremat[b][a-1]
-        diagonal = scoremat[b-1][a-1]
+    if VERBOSE:
+        print ''
+        print 'Traceback:'
+        print 's1 s2'
+
+    while (a != 0) or (b != 0):
+
+        if VERBOSE:
+            print a,b
+
+        if b > 0:
+            up = scoremat[b-1][a]
+        else:
+            up = -float('inf')
+
+        if a > 0:
+            left = scoremat[b][a-1]
+        else:
+            left = -float('inf')
+
+        if a > 0 and b > 0:
+            diagonal = scoremat[b-1][a-1]
+        else:
+            diagonal = -float('inf')
 
         maximum = [diagonal,left,up]
         m = max(maximum)
@@ -222,8 +248,26 @@ def needlemanWunsch(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
             alignmentA="-"+alignmentA
             alignmentB=seqB[b]+alignmentB
 
-    return [alignmentA,alignmentB,scoremat[-1][-1]]
+    #score = scoremat[-1][-1]
 
+    return [alignmentA,alignmentB]
+
+def score_alignment(align1,align2,letters):
+    if len(align1) != len(align2):
+        return -1
+
+    matches = 0.0
+    mismatches_indels = 0.0
+    for i in range(0,len(align1)):
+
+        if align1[i] == align2[i] and align1[i] in letters and align2[i] in letters:
+            matches += 1.0
+        else:
+            mismatches_indels += 1.0
+
+    return matches / (matches + mismatches_indels)
+
+PRINT_IN_OUT = True
 VERBOSE = False
 
 str1 = random_seq(letters_dna, 20)
@@ -231,28 +275,35 @@ str1 = random_seq(letters_dna, 20)
 str2 = add_random_insertion(str1, 0.05)
 str2 = add_snps(str2, letters_dna, 0.1)
 
-str1 = 'ACGACGCTAAGATCGGGCCA'
-str2 = 'ACCGTGGGGCACTAAACGGCTAGCAACCCTAATGGTTTTGTACATAATAAGACGGACGATCGTAAGCCATGATCGGGCCA'
-
+#Test case 1
 #str1 = 'GCATGCU'
 #str2 = 'GATTACA'
 
-print 'Input sequences:'
-print str1
-print str2
-print ''
+#Test case 2
+#str1 = 'ACGACGCTAAGATCGGGCCA'
+#str2 = 'ACCGTGGGGCACTAAACGGCTAGCAACCCTAATGGTTTTGTACATAATAAGACGGACGATCGTAAGCCATGATCGGGCCA'
 
-[align1,align2,score] = needlemanWunsch(str1,str2,partial(exponential,a=0,b=1),partial(linear),partial(logarithmic,a=0,b=1))
+#Test case 3
+#str1 = 'AAA'
+#str2 = 'ACCGTGGGGCACTAAACGGCTAGCA'
 
-print 'Aligned sequences with score '+str(score)+':'
-print align1
-print align2
-print ''
+if PRINT_IN_OUT:
+    print 'Input sequences:'
+    print str1
+    print str2
+    print ''
 
-[align1,align2,score] = needlemanWunsch(str1,str2,partial(quadratic,a=0,b=1),partial(linear),partial(logarithmic,a=0,b=1))
+[align1,align2] = monotonicAlign(str1,str2,
+                                 partial(affine,a=0,b=2),
+                                 partial(linear),
+                                 partial(affine,a=4,b=2))
 
-print 'Aligned sequences with score '+str(score)+':'
-print align1
-print align2
+score = score_alignment(align1,align2,letters_dna)
+
+if PRINT_IN_OUT:
+    print 'Aligned sequences with score '+str(score)+':'
+    print align1
+    print align2
+    print ''
 
 
