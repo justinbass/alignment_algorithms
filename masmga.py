@@ -540,8 +540,12 @@ for mat_fun, mismat_fun, gap_fun in trials_grid:
 
     time_elapsed = round(time.time()-time_begin,2)
     eta = int((len(trials_grid)-1-trial_iter)*(time_elapsed/(trial_iter+1)))
+    eta_h = eta/3600
+    eta_m = (eta%3600)/60
+    eta_s = eta%60
+
     print 'Iter: '+str(trial_iter)+'/'+str(len(trials_grid))+\
-        ' Elapsed: '+str(time_elapsed)+'s','ETA:',str(eta)+'s','('+str(int(eta/60))+' min)'
+        ' Elapsed: '+str(time_elapsed)+'s','ETA:',str(eta_h)+'h',str(eta_m)+'m',str(eta_s)+'s'
     trial_iter += 1
 
 print 'DONE:',datetime.datetime.now().time()
