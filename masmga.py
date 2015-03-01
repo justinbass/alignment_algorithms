@@ -7,6 +7,9 @@ import random
 import time,datetime
 from functools import partial
 
+VERBOSE = True
+PRINT_IN_OUT = False
+
 letters_dna = ['A','T','G','C']
 E = 2.7182818
 
@@ -185,12 +188,18 @@ def monotonicAlign(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
         Vind.append([0.0]*(len(seqA)+1))
         Hind.append([0.0]*(len(seqA)+1))
 
-    for column in range(1,len(seqA)+1):
+    #Do first column/line separate to account for constant shifts in the gappen
+    Hind[0][1] = 1.0
+    Vind[1][0] = 1.0
+    scoremat[0][1] = -gappen_fun(1.0)
+    scoremat[1][0] = -gappen_fun(1.0)
+
+    for column in range(2,len(seqA)+1):
         Hind[0][column] = Hind[0][column-1] + 1.0
         Hind_score = gappen_fun(Hind[0][column]) - gappen_fun(Hind[0][column-1])
         scoremat[0][column] = scoremat[0][column-1] - Hind_score
         
-    for line in range(1,len(seqB)+1):
+    for line in range(2,len(seqB)+1):
         Vind[line][0] = Vind[line-1][0] + 1.0
         Vind_score = gappen_fun(Vind[line][0]) - gappen_fun(Vind[line-1][0])
         scoremat[line][0] = scoremat[line-1][0] - Vind_score
@@ -203,21 +212,34 @@ def monotonicAlign(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
 
                 length = Dmat[line-1][column-1] + 1.0
                 Dmat[line][column] = length
-                match_score = match_fun(length) - match_fun(length - 1)
+                if length == 1.0:
+                    match_score = match_fun(1.0)
+                else:
+                    match_score = match_fun(length) - match_fun(length - 1)
             else:
                 Dmat[line][column] = 0.0
 
                 length = Dmis[line-1][column-1] + 1.0
                 Dmis[line][column] = length
-                match_score = -(mismatch_fun(length) - mismatch_fun(length - 1))
+                if length == 1.0:
+                    match_score = -(mismatch_fun(1.0))
+                else:
+                    match_score = -(mismatch_fun(length) - mismatch_fun(length - 1))
 
             #Set the Vind and Hind matrices to increment for now
             #   if match/mismatch is more optimal, these will be set to 0 later
             Hind[line][column] = Hind[line][column-1] + 1.0
             Vind[line][column] = Vind[line-1][column] + 1.0
 
-            Hind_score = gappen_fun(Hind[line][column]) - gappen_fun(Hind[line][column-1])
-            Vind_score = gappen_fun(Vind[line][column]) - gappen_fun(Vind[line-1][column])
+            if Hind[line][column] == 1.0:
+                Hind_score = gappen_fun(1.0)
+            else:
+                Hind_score = gappen_fun(Hind[line][column]) - gappen_fun(Hind[line][column-1])
+
+            if Vind[line][column] == 1.0:
+                Vind_score = gappen_fun(1.0)
+            else:
+                Vind_score = gappen_fun(Vind[line][column]) - gappen_fun(Vind[line-1][column])
 
             diagonal = scoremat[line-1][column-1] + match_score
             left = scoremat[line][column-1] - Hind_score
@@ -375,12 +397,6 @@ def get_indel_dist(align1,align2):
 
     return indel_dist
 
-VERBOSE = False
-PRINT_IN_OUT = False
-
-#funs = [logarithmic,linear,affinelog,affine,subsubquadratic,subquadratic,
-#        quadratic,cubic,exponential]
-
 gap_funs = list()
 
 for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,5)]:
@@ -426,13 +442,13 @@ for mat_fun, mismat_fun, gap_fun in trials_grid:
     total_indelmean = 0
     len1 = 0
     len2 = 0
-    tinsnum = 0
-    tinslen = 0
-    tdelnum = 0
-    tdellen = 0
-    tcnvnum = 0
-    tcnvlen = 0
-    tsnpnum = 0
+    tinsnum = 0.0
+    tinslen = 0.0
+    tdelnum = 0.0
+    tdellen = 0.0
+    tcnvnum = 0.0
+    tcnvlen = 0.0
+    tsnpnum = 0.0
     
     for t in range(trials):
         str1 = random_seq(letters_dna, str_length)
