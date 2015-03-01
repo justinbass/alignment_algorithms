@@ -7,7 +7,7 @@ import random
 import time,datetime
 from functools import partial
 
-VERBOSE = True
+VERBOSE = False
 PRINT_IN_OUT = False
 
 letters_dna = ['A','T','G','C']
@@ -188,20 +188,25 @@ def monotonicAlign(seqA,seqB,match_fun,mismatch_fun,gappen_fun):
         Vind.append([0.0]*(len(seqA)+1))
         Hind.append([0.0]*(len(seqA)+1))
 
-    #Do first column/line separate to account for constant shifts in the gappen
-    Hind[0][1] = 1.0
-    Vind[1][0] = 1.0
-    scoremat[0][1] = -gappen_fun(1.0)
-    scoremat[1][0] = -gappen_fun(1.0)
-
-    for column in range(2,len(seqA)+1):
+    for column in range(1,len(seqA)+1):
         Hind[0][column] = Hind[0][column-1] + 1.0
-        Hind_score = gappen_fun(Hind[0][column]) - gappen_fun(Hind[0][column-1])
+
+        #Do first column/line separate to account for constant shifts in the gappen
+        if(Hind[0][column] == 1.0):
+            Hind_score = gappen_fun(Hind[0][column])
+        else:
+            Hind_score = gappen_fun(Hind[0][column]) - gappen_fun(Hind[0][column-1])
+
         scoremat[0][column] = scoremat[0][column-1] - Hind_score
         
-    for line in range(2,len(seqB)+1):
+    for line in range(1,len(seqB)+1):
         Vind[line][0] = Vind[line-1][0] + 1.0
-        Vind_score = gappen_fun(Vind[line][0]) - gappen_fun(Vind[line-1][0])
+
+        if(Vind[line][0] == 1.0):
+            Vind_score = gappen_fun(Vind[line][0])
+        else:
+            Vind_score = gappen_fun(Vind[line][0]) - gappen_fun(Vind[line-1][0])
+
         scoremat[line][0] = scoremat[line-1][0] - Vind_score
 
     for column in range(1,len(seqA)+1):
@@ -554,15 +559,15 @@ for mat_fun, mismat_fun, gap_fun in trials_grid:
     datacsv.write(write_str + '\n')
     datacsv.flush()
 
+    trial_iter += 1
     time_elapsed = round(time.time()-time_begin,2)
-    eta = int((len(trials_grid)-1-trial_iter)*(time_elapsed/(trial_iter+1)))
-    eta_h = eta/3600
-    eta_m = (eta%3600)/60
+    eta = int((len(trials_grid)-trial_iter)*time_elapsed/(trial_iter))
+    eta_h = int(math.floor(eta/3600))
+    eta_m = int(math.floor(eta/60 % 60))
     eta_s = eta%60
 
     print 'Iter: '+str(trial_iter)+'/'+str(len(trials_grid))+\
         ' Elapsed: '+str(time_elapsed)+'s','ETA:',str(eta_h)+'h',str(eta_m)+'m',str(eta_s)+'s'
-    trial_iter += 1
 
 print 'DONE:',datetime.datetime.now().time()
 
