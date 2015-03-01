@@ -4,6 +4,7 @@
 
 import math
 import random
+import time,datetime
 from functools import partial
 
 letters_dna = ['A','T','G','C']
@@ -384,7 +385,6 @@ gap_funs = list()
 
 for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,5)]:
     gap_funs.append(partial(affine,a=aa,b=bb))
-'''
 for aa,bb,cc in [(aa,bb,cc) for aa in range(0,5) for bb in range(0,5) for cc in range(0,5)]:
     gap_funs.append(partial(logarithmic,a=aa,b=bb,c=cc))
 for aa,bb,cc,dd in [(aa,bb,cc,dd) for aa in range(0,5) for bb in range(0,5) for cc in range(0,5) for dd in range(0,5)]:
@@ -395,7 +395,6 @@ for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,5)]:
     gap_funs.append(partial(subquadratic,a=aa,b=bb))
 for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,5)]:
     gap_funs.append(partial(quadratic,a=aa,b=bb))
-'''
 
 mat_funs = [partial(linear)]
 mismat_funs = [partial(linear)]
@@ -413,6 +412,10 @@ ma_name,ma,mb,mc,md,mma_name,mma,mmb,mmc,mmd,gf_name,ga,gb,gc,gd'
 
 print write_head
 datacsv.write(write_head + '\n')
+
+time_begin = time.time()
+trial_iter = 0
+print 'BEGIN:',datetime.datetime.now().time()
 
 for mat_fun, mismat_fun, gap_fun in trials_grid:
     trials = 100
@@ -518,7 +521,10 @@ for mat_fun, mismat_fun, gap_fun in trials_grid:
     actual_matches = len1 - tdellen
     actual_mismatches = tsnpnum
     actual_indels = tinsnum + tdelnum + tcnvnum
-    actual_indel_mean = (tinslen+tdellen+tcnvlen)/actual_indels
+    if actual_indels != 0:
+        actual_indel_mean = (tinslen+tdellen+tcnvlen)/actual_indels
+    else:
+        actual_indel_mean = 0
 
     write_vars = [trials,len1,len2,
     actual_matches,actual_mismatches,actual_indels,actual_indel_mean,
@@ -531,4 +537,12 @@ for mat_fun, mismat_fun, gap_fun in trials_grid:
     print write_str
     datacsv.write(write_str + '\n')
     datacsv.flush()
+
+    time_elapsed = round(time.time()-time_begin,2)
+    eta = int((len(trials_grid)-1-trial_iter)*(time_elapsed/(trial_iter+1)))
+    print 'Iter: '+str(trial_iter)+'/'+str(len(trials_grid))+\
+        ' Elapsed: '+str(time_elapsed)+'s','ETA:',str(eta)+'s','('+str(int(eta/60))+' min)'
+    trial_iter += 1
+
+print 'DONE:',datetime.datetime.now().time()
 
