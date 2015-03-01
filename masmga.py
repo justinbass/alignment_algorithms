@@ -20,7 +20,6 @@ def logarithmic(str_len,a,b,c):
         return 0
     return a + b*math.log(str_len + c, E)
 
-#The default Needleman-Wunsch algorithm uses all linear input functions
 def linear(str_len):
     return str_len
 
@@ -51,14 +50,6 @@ def exponential(str_len,a,b):
 def empirical_indel_size_dist():
     return 1.819*math.pow(random.uniform(0.00001,1.061),-0.654)
 
-#TODO: This has not been checked
-def empirical_ins_size_dist():
-    return 1.414*1.819*math.pow(random.uniform(0.00001,1.061),-0.654)
-
-#TODO: This has not been checked
-def empirical_del_size_dist():
-    return (1.0/1.414)*1.819*math.pow(random.uniform(0.00001,1.061),-0.654)
-
 #Get a bool with uniform frequency
 def uniform_bool(freq):
     if freq >= 1.0:
@@ -82,16 +73,26 @@ def random_seq(letters,length):
 
 #Introduce SNPs into a string in proportion to accuracy
 def add_snps(instr, freq, letters):
+    num = 0
     for i in range(0,len(instr)):
         if uniform_bool(freq):
             ins_list = list(instr)
-            ins_list[i] = letters[random.randint(0,len(letters)-1)]
+            new_let = letters[random.randint(0,len(letters)-1)]
+
+            #Only increase SNP count if the letter has changed
+            if new_let != ins_list[i]:
+                num += 1
+
+            ins_list[i] = new_let
             instr = "".join(ins_list)
-    return instr
+
+    return (instr, num)
 
 #Introduce random insertions into a string with a frequency of an insertion
 #   starting, and a distribution of the length of insertion once started
 def add_random_insertion(instr, freq, dist_length):
+    num = 0
+    ilen = 0
     instrlist = list(instr)
 
     #Must traverse instrlist backwards so that inserts occur in the correct order
@@ -99,12 +100,16 @@ def add_random_insertion(instr, freq, dist_length):
         if uniform_bool(freq):
             length = int(math.floor(dist_length()))
             instrlist.insert(i,random_seq(letters_dna,length))
+            num += 1
+            ilen += length
 
-    return "".join(instrlist)
+    return ("".join(instrlist),num,ilen)
 
 #Introduce random deletions into a string with a frequency of an deletion
 #   starting, and a distribution of the length of deletion once started
 def add_random_deletion(instr, freq, dist_length):
+    num = 0
+    ilen = 0
     instrlist = list(instr)
 
     #Must traverse instrlist backwards so that inserts occur in the correct order
@@ -117,13 +122,18 @@ def add_random_deletion(instr, freq, dist_length):
             for j in range(0, min(length,len(instrlist)-i)):
                 instrlist.pop(i)
 
-    return "".join(instrlist)
+            num += 1
+            ilen += min(length,len(instrlist)-i)
+
+    return ("".join(instrlist),num,ilen)
 
 #Introduce random Copy-Number Variations
 #   freq: Freqeuncy of a CNV starting
 #   dist_length: Distribution of length of copied string
 #   dist_copies: Distribution of number of copies
 def add_random_cnv(instr, freq, dist_length, dist_copies):
+    num = 0
+    clen = 0
     instrlist = list(instr)
 
     #Must traverse instrlist backwards so that inserts occur in the correct order
@@ -148,7 +158,10 @@ def add_random_cnv(instr, freq, dist_length, dist_copies):
                 for copy_letter in copy_string:
                     instrlist.insert(i,copy_letter)
 
-    return "".join(instrlist)
+            num += 1
+            clen += length*copies
+
+    return ("".join(instrlist),num,clen)
 
 ################################################################################
 # The Main MASMGA Function
@@ -325,15 +338,18 @@ def score_alignment(align1,align2,letters):
         return -1
 
     matches = 0.0
-    mismatches_indels = 0.0
+    mismatches = 0.0
+    indels = 0.0
     for i in range(0,len(align1)):
 
         if align1[i] == align2[i] and align1[i] in letters and align2[i] in letters:
             matches += 1.0
+        elif align1[i] != align2[i] and align1[i] in letters and align2[i] in letters:
+            mismatches += 1.0
         else:
-            mismatches_indels += 1.0
+            indels += 1.0
 
-    return matches / (matches + mismatches_indels)
+    return [matches, mismatches, indels]
 
 #Get the indel distribution as a dictionary: key=length, value=frequency
 def get_indel_dist(align1,align2):
@@ -361,42 +377,103 @@ def get_indel_dist(align1,align2):
 VERBOSE = False
 PRINT_IN_OUT = False
 
-trials = 100
-str_length = 100
-
 #funs = [logarithmic,linear,affinelog,affine,subsubquadratic,subquadratic,
 #        quadratic,cubic,exponential]
 
-funs = list()
-for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,4)]:
-    funs.append(partial(affine,a=aa,b=bb))
+gap_funs = list()
 
-trials_grid = [(mat_fun, mismat_fun, gap_fun) for mat_fun in funs
-                                              for mismat_fun in funs
-                                              for gap_fun in funs]
+for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,5)]:
+    gap_funs.append(partial(affine,a=aa,b=bb))
+'''
+for aa,bb,cc in [(aa,bb,cc) for aa in range(0,5) for bb in range(0,5) for cc in range(0,5)]:
+    gap_funs.append(partial(logarithmic,a=aa,b=bb,c=cc))
+for aa,bb,cc,dd in [(aa,bb,cc,dd) for aa in range(0,5) for bb in range(0,5) for cc in range(0,5) for dd in range(0,5)]:
+    gap_funs.append(partial(affinelog,a=aa,b=bb,c=cc,d=dd))
+for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,5)]:
+    gap_funs.append(partial(subsubquadratic,a=aa,b=bb))
+for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,5)]:
+    gap_funs.append(partial(subquadratic,a=aa,b=bb))
+for aa,bb in [(aa,bb) for aa in range(0,5) for bb in range(0,5)]:
+    gap_funs.append(partial(quadratic,a=aa,b=bb))
+'''
 
-print 'score,match_fun,a,b,mismatch_fun,a,b,gap_fun,a,b'
+mat_funs = [partial(linear)]
+mismat_funs = [partial(linear)]
+
+trials_grid = [(mat_fun, mismat_fun, gap_fun) for mat_fun in mat_funs
+                                              for mismat_fun in mismat_funs
+                                              for gap_fun in gap_funs]
+
+datacsv = open('data.csv','w')
+
+write_head = 'trials,len1,len2,\
+actual_matches,actual_mismatches,actual_indels,actual_indel_mean,\
+total_matches,total_mismatches,total_indels,total_indelmean,\
+ma_name,ma,mb,mc,md,mma_name,mma,mmb,mmc,mmd,gf_name,ga,gb,gc,gd'
+
+print write_head
+datacsv.write(write_head + '\n')
 
 for mat_fun, mismat_fun, gap_fun in trials_grid:
-    total_score = 0
+    trials = 100
+    str_length = 100
+    total_matches = 0
+    total_mismatches = 0
+    total_indels = 0
+    total_indelmean = 0
+    len1 = 0
+    len2 = 0
+    tinsnum = 0
+    tinslen = 0
+    tdelnum = 0
+    tdellen = 0
+    tcnvnum = 0
+    tcnvlen = 0
+    tsnpnum = 0
+    
     for t in range(trials):
         str1 = random_seq(letters_dna, str_length)
         str2 = str1
 
-        str2 = add_random_insertion(str2, 0.02, empirical_ins_size_dist)
-        str2 = add_random_deletion(str2, 0.02, empirical_del_size_dist)
-        str2 = add_random_cnv(str2, 0.02, partial(linear,str_len=4),partial(linear,str_len=1))
-        str2 = add_snps(str2, 0.02, letters_dna)
+        (str2,insnum,inslen) = add_random_insertion(str2, 0.02, empirical_indel_size_dist)
+        (str2,delnum,dellen) = add_random_deletion(str2, 0.02, empirical_indel_size_dist)
+        (str2,cnvnum,cnvlen) = add_random_cnv(str2, 0.02, partial(linear,str_len=4),partial(linear,str_len=1))
+        (str2,snpnum) = add_snps(str2, 0.02, letters_dna)
 
         [align1,align2] = monotonicAlign(str1,str2,
                                          mat_fun,
                                          mismat_fun,
                                          gap_fun)
 
-        score = score_alignment(align1,align2,letters_dna)
-        indel_dist = get_indel_dist(align1,align2)
+        [matches, mismatches, indels] = score_alignment(align1,align2,letters_dna)
+        total_matches += matches
+        total_mismatches += mismatches
+        total_indels += indels
+        len1 += len(str1)
+        len2 += len(str2)
+        tinsnum += insnum
+        tinslen += inslen
+        tdelnum += delnum
+        tdellen += dellen
+        tcnvnum += cnvnum
+        tcnvlen += cnvlen
+        tsnpnum += snpnum
 
-        total_score += score
+        def get_indel_mean(idist):
+            indel_mean = 0.0
+            indel_num = 0.0
+            for i in idist:
+                indel_mean += i*idist[i]
+                indel_num += idist[i]
+
+            if indel_num != 0:
+                indel_mean = indel_mean/indel_num
+            else:
+                indel_mean = 0
+
+            return indel_mean
+
+        total_indelmean += get_indel_mean(get_indel_dist(align1,align2))
 
         if PRINT_IN_OUT:
             print 'Input seqs:\n'+str1+'\n'+str2+'\n'
@@ -405,31 +482,53 @@ for mat_fun, mismat_fun, gap_fun in trials_grid:
 
     ma_name = mat_fun.func.__name__
     args = mat_fun.keywords
-    ma = args['a'] if 'a' in args else ''
-    mb = args['b'] if 'b' in args else ''
-    mc = args['c'] if 'c' in args else ''
-    md = args['d'] if 'd' in args else ''
+    ma = args['a'] if args and 'a' in args else ''
+    mb = args['b'] if args and 'b' in args else ''
+    mc = args['c'] if args and 'c' in args else ''
+    md = args['d'] if args and 'd' in args else ''
 
     mma_name = mismat_fun.func.__name__
     args = mismat_fun.keywords
-    mma = args['a'] if 'a' in args else ''
-    mmb = args['b'] if 'b' in args else ''
-    mmc = args['c'] if 'c' in args else ''
-    mmd = args['d'] if 'd' in args else ''
+    mma = args['a'] if args and 'a' in args else ''
+    mmb = args['b'] if args and 'b' in args else ''
+    mmc = args['c'] if args and 'c' in args else ''
+    mmd = args['d'] if args and 'd' in args else ''
 
     gf_name = gap_fun.func.__name__
     args = gap_fun.keywords
-    ga = args['a'] if 'a' in args else ''
-    gb = args['b'] if 'b' in args else ''
-    gc = args['c'] if 'c' in args else ''
-    gd = args['d'] if 'd' in args else ''
+    ga = args['a'] if args and 'a' in args else ''
+    gb = args['b'] if args and 'b' in args else ''
+    gc = args['c'] if args and 'c' in args else ''
+    gd = args['d'] if args and 'd' in args else ''
 
-    total_score /= trials
-    print str(total_score)+','+\
-          str(ma_name)+','+str(ma)+','+str(mb)+','+str(mc)+','+str(md)+\
-          str(mma_name)+','+str(mma)+','+str(mmb)+','+str(mmc)+','+str(mmd)+\
-          str(gf_name)+','+str(ga)+','+str(gb)+','+str(gc)+','+str(gd)
+    total_matches /= trials
+    total_mismatches /= trials
+    total_indels /= trials
+    len1 /= trials
+    len2 /= trials
+    tinsnum /= trials
+    tinslen /= trials
+    tdelnum /= trials
+    tdellen /= trials
+    tcnvnum /= trials
+    tcnvlen /= trials
+    tsnpnum /= trials
+    total_indelmean /= trials
 
+    actual_matches = len1 - tdellen
+    actual_mismatches = tsnpnum
+    actual_indels = tinsnum + tdelnum + tcnvnum
+    actual_indel_mean = (tinslen+tdellen+tcnvlen)/actual_indels
 
+    write_vars = [trials,len1,len2,
+    actual_matches,actual_mismatches,actual_indels,actual_indel_mean,
+    total_matches,total_mismatches,total_indels,total_indelmean,
+    ma_name,ma,mb,mc,md, mma_name,mma,mmb,mmc,mmd, gf_name,ga,gb,gc,gd]
+    write_str = str(write_vars[0])
+    for i in range(1,len(write_vars)):
+        write_str += ',' + str(write_vars[i])
 
+    print write_str
+    datacsv.write(write_str + '\n')
+    datacsv.flush()
 
